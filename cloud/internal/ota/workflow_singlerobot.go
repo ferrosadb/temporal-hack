@@ -18,10 +18,10 @@ type OTASingleRobotInput struct {
 // AckSignal is the structured signal payload posted by mqttbridge
 // when an OTAAck arrives for a workflow's robot.
 type AckSignal struct {
-	Phase                string `json:"phase"` // values map to ota.proto Phase enum names
-	Detail               string `json:"detail"`
-	ImageDigest          string `json:"image_digest"`
-	PreviousImageDigest  string `json:"previous_image_digest"`
+	Phase               string `json:"phase"` // values map to ota.proto Phase enum names
+	Detail              string `json:"detail"`
+	ImageDigest         string `json:"image_digest"`
+	PreviousImageDigest string `json:"previous_image_digest"`
 }
 
 // SignalAck is the signal channel name used for ack delivery.

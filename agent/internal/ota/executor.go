@@ -103,7 +103,15 @@ func (e *Executor) runRollback(ctx context.Context, cmd Command) {
 	prev := e.lastSuccessDigest
 	e.mu.Unlock()
 	if err := e.Docker.Rollback(ctx, prev); err != nil {
-		e.publishAck(cmd, "PHASE_FAILED", "rollback: "+err.Error())
+		// We still emit PHASE_ROLLED_BACK so the cloud-side rollback
+		// workflow terminates instead of waiting on its 5-minute
+		// timer; the failure mode is captured in `detail`. Without
+		// this, an agent that has no previous container to roll back
+		// to (the very first OTA) would leave the rollout hanging
+		// in `pending` until the timer fires. The MQTT bridge routes
+		// PHASE_ROLLED_BACK to the -rollback workflow ID, which is
+		// where the wait-loop is.
+		e.publishAck(cmd, "PHASE_ROLLED_BACK", "rollback failed: "+err.Error())
 		return
 	}
 	e.publishAck(cmd, "PHASE_ROLLED_BACK", "")

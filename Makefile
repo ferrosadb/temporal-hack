@@ -109,6 +109,166 @@ build-cloud:
 	cd cloud && go build -o ../bin/controlplane ./cmd/controlplane
 	cd cloud && go build -o ../bin/telemetry-ingest ./cmd/telemetry-ingest
 	cd cloud && go build -o ../bin/ota-worker ./cmd/ota-worker
+	cd cloud && go build -o ../bin/collision-worker ./cmd/collision-worker
+
+# =============================================================================
+# Workflow workers — host-side Go binaries that connect to the lab
+# Temporal frontend + MQTT broker. Without these running, the
+# Temporal UI shows no Workers / no in-flight Workflows.
+# =============================================================================
+
+WORKER_TEMPORAL_ADDR ?= localhost:14733
+WORKER_BROKER_URL   ?= tcp://localhost:14883
+WORKER_TSDB_DSN     ?= postgres://temporal:temporal@localhost:14432/telemetry?sslmode=disable
+
+# Native agent — runs as a Go binary on the host (macOS). Avoids
+# bind-mounting the container-runtime socket into a sibling
+# container (rootless podman idmap makes that path painful) and
+# uses the host's docker/podman CLI directly when an OTA fires.
+AGENT_ROBOT_ID    ?= sim-robot-01
+AGENT_BROKER_URL  ?= tcp://localhost:14883
+AGENT_BRIDGE_ADDR ?= localhost:50051
+AGENT_BUFFER_PATH ?= .run/agent-buffer.db
+AGENT_OTA_RUN_ARGS ?= --network=temporal-hack-lab_default,-e,ROS_DOMAIN_ID=42,-e,RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+.PHONY: agent-up
+agent-up: build-agent ## Start the agent natively on the host (preferred for local dev)
+	@mkdir -p .run
+	@ROBOT_ID=$(AGENT_ROBOT_ID) \
+	  BROKER_URL=$(AGENT_BROKER_URL) \
+	  BRIDGE_ADDR=$(AGENT_BRIDGE_ADDR) \
+	  BUFFER_PATH=$(AGENT_BUFFER_PATH) \
+	  OTA_RUN_ARGS="$(AGENT_OTA_RUN_ARGS)" \
+	  nohup ./bin/agent > .run/agent.log 2>&1 & echo $$! > .run/agent.pid
+	@sleep 1
+	@echo "agent             PID $$(cat .run/agent.pid 2>/dev/null)             log .run/agent.log"
+
+.PHONY: agent-down
+agent-down: ## Stop the native agent
+	@[ -f .run/agent.pid ] && kill "$$(cat .run/agent.pid)" 2>/dev/null && rm -f .run/agent.pid && echo "stopped agent" || true
+
+.PHONY: agent-status
+agent-status: ## Show native agent status
+	@pid="$$(cat .run/agent.pid 2>/dev/null || echo '')"; \
+	 if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then echo "agent: running (pid $$pid)"; \
+	 else echo "agent: not running"; fi
+
+.PHONY: workers-up
+workers-up: build-cloud ## Start ota-worker + collision-worker in the background
+	@mkdir -p .run
+	@TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) BROKER_URL=$(WORKER_BROKER_URL) \
+	  TSDB_DSN="$(WORKER_TSDB_DSN)" \
+	  nohup ./bin/ota-worker > .run/ota-worker.log 2>&1 & echo $$! > .run/ota-worker.pid
+	@TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) BROKER_URL=$(WORKER_BROKER_URL) \
+	  nohup ./bin/collision-worker > .run/collision-worker.log 2>&1 & echo $$! > .run/collision-worker.pid
+	@sleep 1
+	@echo "ota-worker        PID $$(cat .run/ota-worker.pid 2>/dev/null)        log .run/ota-worker.log"
+	@echo "collision-worker  PID $$(cat .run/collision-worker.pid 2>/dev/null)  log .run/collision-worker.log"
+
+.PHONY: workers-down
+workers-down: ## Stop the workflow workers
+	@for f in .run/ota-worker.pid .run/collision-worker.pid; do \
+	  [ -f $$f ] && kill "$$(cat $$f)" 2>/dev/null && rm -f $$f && echo "stopped $$f" || true; \
+	done
+
+.PHONY: workers-status
+workers-status: ## Show status of running workflow workers
+	@for n in ota-worker collision-worker; do \
+	  pid="$$(cat .run/$$n.pid 2>/dev/null || echo '')"; \
+	  if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then \
+	    echo "$$n: running (pid $$pid)"; \
+	  else \
+	    echo "$$n: not running"; \
+	  fi; \
+	done
+
+# Publish a fake collision event to trigger a CollisionResponse workflow.
+# Uses the lab broker directly via the robot container's paho client.
+.PHONY: collide
+collide: ## Publish a fake collision event for sim-robot-01 (triggers Temporal workflow)
+	@$(CONTAINER_ENGINE) exec temporal-hack-lab-robot-1 python3 -c \
+	  "import paho.mqtt.publish as p, time, json; p.single('events/sim-robot-01/collision', json.dumps({'robot_id':'sim-robot-01','at':time.time(),'count':1,'partner':'manual-trigger'}), hostname='mqtt', port=1883, qos=1)"
+	@echo "published events/sim-robot-01/collision; check Temporal UI for collision-* workflow"
+
+# =============================================================================
+# Control plane (HTTP API for OTA rollouts) — host-side binary, not in
+# compose. Required to start a rollout via /v1/ota/rollouts. Same
+# pattern as workers-up / workers-down.
+# =============================================================================
+
+CP_LISTEN_ADDR ?= :8081
+
+.PHONY: controlplane-up
+controlplane-up: build-cloud ## Start the control plane HTTP API in the background
+	@mkdir -p .run
+	@LISTEN_ADDR=$(CP_LISTEN_ADDR) \
+	  TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) \
+	  TSDB_DSN="$(WORKER_TSDB_DSN)" \
+	  nohup ./bin/controlplane > .run/controlplane.log 2>&1 & echo $$! > .run/controlplane.pid
+	@sleep 1
+	@echo "controlplane      PID $$(cat .run/controlplane.pid 2>/dev/null)      log .run/controlplane.log"
+	@echo "  POST http://localhost$(CP_LISTEN_ADDR)/v1/ota/rollouts to start an OTA"
+
+.PHONY: controlplane-down
+controlplane-down: ## Stop the control plane API
+	@[ -f .run/controlplane.pid ] && kill "$$(cat .run/controlplane.pid)" 2>/dev/null && rm -f .run/controlplane.pid && echo "stopped controlplane" || true
+
+.PHONY: controlplane-status
+controlplane-status: ## Show control plane status
+	@pid="$$(cat .run/controlplane.pid 2>/dev/null || echo '')"; \
+	 if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then \
+	   echo "controlplane: running (pid $$pid) at http://localhost$(CP_LISTEN_ADDR)"; \
+	 else echo "controlplane: not running"; fi
+
+# =============================================================================
+# OTA demo helpers — build the controller image, push it to the lab
+# registry, fire a rollout. One command per controller.
+# =============================================================================
+
+OTA_REGISTRY    ?= localhost:14050
+OTA_ROBOT_ID    ?= sim-robot-01
+OTA_CP_HOST     ?= http://localhost:8081
+
+# Internal: build + push a single controller. Args: $(1)=name (matches sim/controllers/<name>),
+# $(2)=tag suffix.
+define _ota_build_push
+	@echo "[ota] building sim/controllers/$(1) → $(OTA_REGISTRY)/robot-app:$(2)"
+	$(CONTAINER_ENGINE) build \
+	  -t $(OTA_REGISTRY)/robot-app:$(2) \
+	  -f sim/controllers/$(1)/Dockerfile \
+	  sim/controllers/$(1)
+	$(CONTAINER_ENGINE) push --tls-verify=false $(OTA_REGISTRY)/robot-app:$(2)
+endef
+
+# Internal: POST a rollout for the given image tag.
+define _ota_rollout
+	@echo "[ota] starting rollout for $(OTA_REGISTRY)/robot-app:$(1) on $(OTA_ROBOT_ID)"
+	@curl -sS -X POST $(OTA_CP_HOST)/v1/ota/rollouts \
+	  -H "content-type: application/json" \
+	  -d '{ \
+	    "image_ref": "$(OTA_REGISTRY)/robot-app:$(1)", \
+	    "smoke_command": "true", \
+	    "smoke_timeout_sec": 10, \
+	    "cohort_selector": {"robot_ids": ["$(OTA_ROBOT_ID)"]} \
+	  }' && echo
+endef
+
+.PHONY: ota-circle
+ota-circle: ## Build, push, and OTA-roll the drive-circle controller
+	$(call _ota_build_push,drive-circle,circle-v1)
+	$(call _ota_rollout,circle-v1)
+	@echo "watch the rover at http://localhost:14680 — should start driving in a circle"
+	@echo "rollout status:   curl -s $(OTA_CP_HOST)/v1/ota/rollouts | jq"
+
+.PHONY: ota-figure-eight
+ota-figure-eight: ## Build, push, and OTA-roll the drive-figure-eight controller
+	$(call _ota_build_push,drive-figure-eight,figure-eight-v1)
+	$(call _ota_rollout,figure-eight-v1)
+	@echo "watch the rover at http://localhost:14680 — should start tracing a figure 8"
+
+.PHONY: ota-status
+ota-status: ## List recent OTA rollouts (requires controlplane-up)
+	@curl -sS $(OTA_CP_HOST)/v1/ota/rollouts | (command -v jq >/dev/null && jq || cat)
 
 .PHONY: build-agent
 build-agent:

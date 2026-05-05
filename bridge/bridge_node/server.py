@@ -133,17 +133,33 @@ class BatterySubscriber(Node):  # pragma: no cover -- requires ROS at runtime
         self.fanout.push(ev)
 
 
-def serve(socket_path: str) -> None:
+def serve(addr: str) -> None:
+    """Run the bridge gRPC server.
+
+    `addr` accepts either a bare ``host:port`` for TCP, or a path /
+    ``unix://<path>`` form for a Unix domain socket. Determined by
+    whether the value contains a colon and no slash.
+    """
     fanout = TopicFanout()
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=8))
     pbg.add_BridgeServicer_to_server(BridgeService(fanout), server)
 
-    if os.path.exists(socket_path):
-        os.unlink(socket_path)
-    server.add_insecure_port(f"unix://{socket_path}")
+    if addr.startswith("unix://"):
+        listen = addr
+        sock_path = addr[len("unix://"):]
+        if os.path.exists(sock_path):
+            os.unlink(sock_path)
+    elif ":" in addr and "/" not in addr:
+        listen = addr  # bare host:port -> TCP
+    else:
+        # bare path -> Unix domain socket
+        if os.path.exists(addr):
+            os.unlink(addr)
+        listen = f"unix://{addr}"
+    server.add_insecure_port(listen)
     server.start()
-    log.info("bridge listening on %s", socket_path)
+    log.info("bridge listening on %s", listen)
 
     if HAVE_ROS:
         rclpy.init(args=None)
@@ -163,10 +179,16 @@ def serve(socket_path: str) -> None:
 
 def main() -> None:  # pragma: no cover
     p = argparse.ArgumentParser()
-    p.add_argument("--socket", default="/run/temporal-hack-bridge.sock")
+    # --listen is the modern arg (TCP host:port or unix:// path).
+    # --socket kept for backwards compat with older callers.
+    p.add_argument("--listen", default=None,
+                   help="gRPC listen address: 'host:port' or 'unix:///path'")
+    p.add_argument("--socket", default=None,
+                   help="(deprecated) Unix domain socket path. Use --listen.")
     args = p.parse_args()
+    addr = args.listen or args.socket or "/run/temporal-hack-bridge.sock"
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    serve(args.socket)
+    serve(addr)
 
 
 if __name__ == "__main__":

@@ -1,86 +1,108 @@
-# Sim overlay: brings up one virtual robot — Gazebo + TurtleBot3 +
-# the bridge node — and an agent container that consumes the bridge's
-# gRPC stream and reports telemetry to the lab MQTT broker.
+# Sim overlay — composed onto the lab project.
 #
-# Composed on top of docker-compose.yml under the same project name,
-# so the sim and lab containers share a network and the agent can
-# reach the broker at `mqtt:1883` (container-internal port — never
-# the host-side port mapping).
+# Three services:
+#   gazebo  - the simulator + ros_gz_bridge + browser GUI (noVNC)
+#   robot   - always-on ROS infrastructure: bridge_node (rclpy →
+#             agent gRPC) + sim_battery
+#   agent   - the Go agent; OTAs robot-app images
 #
-# Use:  make sim-up   (lab cluster + sim + agent)
-#       make sim-down
-#       make sim-logs
+# The OTA-swappable robot software (controllers in sim/controllers/*)
+# is *not* a compose service — the agent spawns those containers on
+# demand and joins them to this same network + ROS DDS domain.
 services:
-  sim:
+  gazebo:
     build:
-      # Build context is the repo root so the bridge/ tree can be COPY'd.
       context: ../..
-      dockerfile: docker/sim/Dockerfile
-    image: temporal-hack/sim:dev
+      dockerfile: docker/gazebo/Dockerfile
+    image: temporal-hack/gazebo:dev
     environment:
-      TURTLEBOT3_MODEL: burger
       ROS_DOMAIN_ID: 42
-      # HEADLESS=0 means the GUI is served over noVNC. To run gzserver
-      # only (no GUI, no X stack), set HEADLESS=1 in the env.
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
       HEADLESS: "${SIM_HEADLESS:-0}"
-      BRIDGE_SOCKET: /run/bridge/temporal-hack-bridge.sock
+      SIM_WORLD: "${SIM_WORLD:-moon.sdf}"
     ports:
-      # Browser GUI (noVNC):  http://localhost:14680/vnc.html?autoconnect=1
       - "${SIM_NOVNC_PORT:-14680}:6080"
-      # Raw VNC (TigerVNC, macOS Screen Sharing, etc.) at localhost:14900
       - "${SIM_VNC_PORT:-14900}:5900"
-    volumes:
-      - bridge-sock:/run/bridge
 
+  robot:
+    build:
+      context: ../..
+      dockerfile: docker/robot/Dockerfile
+    image: temporal-hack/robot:dev
+    environment:
+      ROS_DOMAIN_ID: 42
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    # gRPC bridge port published to the host so a NATIVE agent
+    # binary (running on macOS) can connect at localhost:50051.
+    # Keep `expose` for in-network containers that still talk to
+    # robot:50051 by service name.
+    expose:
+      - "50051"
+    ports:
+      - "${ROBOT_BRIDGE_PORT:-50051}:50051"
+
+  # The agent has TWO supported deployment modes:
+  #
+  #   1. NATIVE (default for local dev) — run as a Go binary on the
+  #      host: `make agent-up`. Avoids the rootless-podman bind-mount-
+  #      socket headache and uses the host's docker/podman CLI
+  #      directly. The robot service publishes 50051 to the host so
+  #      the native agent reaches the bridge at localhost:50051.
+  #
+  #   2. CONTAINERISED (production target, profile-gated) — run as a
+  #      compose service. Requires a working bind mount of the
+  #      container-runtime socket. Bring up with:
+  #         docker compose --profile in-container-agent up -d
+  #
   agent:
+    profiles: ["in-container-agent"]
     image: golang:1.22-bookworm
+    # keep-id maps the container's UIDs onto the host (podman VM) user
+    # that started the compose. Without it, rootless podman idmap
+    # blocks the container's root from reading the bind-mounted
+    # podman.sock — the agent's docker/podman CLI can't perform OTAs.
+    userns_mode: keep-id
     depends_on:
       mqtt:
         condition: service_healthy
-      sim:
+      robot:
         condition: service_started
     working_dir: /src/agent
     environment:
       ROBOT_ID: sim-robot-01
-      # mqtt and sim are sibling services on the same Compose network;
-      # the agent uses the canonical container-internal ports.
+      # Lab broker (back to default port 14883 inside the network is 1883).
       BROKER_URL: tcp://mqtt:1883
       BUFFER_PATH: /var/lib/agent/buffer.db
-      BRIDGE_ADDR: unix:///run/bridge/temporal-hack-bridge.sock
+      # Bridge moved off Unix-domain socket into a sibling container;
+      # talk to it over the lab network on the canonical gRPC port.
+      BRIDGE_ADDR: robot:50051
       # OTA-spawned robot-app containers must join the lab network and
-      # share the sim's ROS_DOMAIN_ID so they can publish /cmd_vel into
-      # the same DDS partition the ros_gz_bridge listens on. Without
-      # this, OTA runs the container on the default bridge network and
-      # the new behaviour never reaches the simulated robot.
+      # share ROS_DOMAIN_ID so /cmd_vel reaches the gazebo container's
+      # ros_gz_bridge.
       OTA_RUN_ARGS: "--network=temporal-hack-lab_default,-e,ROS_DOMAIN_ID=42,-e,RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
-      # The repo is bind-mounted read-only. Go's workspace mode tries
-      # to update go.work.sum on `go run` and fails; turn the workspace
-      # off so the agent module's own go.mod/go.sum are authoritative.
       GOWORK: "off"
-      # Use a writable cache dir; module cache and build cache go to a
-      # named volume so we don't fight the read-only bind mount.
       GOCACHE: /var/cache/go-build
       GOMODCACHE: /var/cache/go-mod
     volumes:
       - ../..:/src:ro
-      - bridge-sock:/run/bridge
       - agent-data:/var/lib/agent
       - go-cache:/var/cache/go-build
       - go-mod:/var/cache/go-mod
-      # Agent needs the container-runtime socket on the host to
-      # perform OTA. CONTAINER_SOCK is supplied by the Makefile at
-      # compose time (resolves to docker.sock or podman.sock).
       - ${CONTAINER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
-    # apt is needed to install the C toolchain for go-sqlite3 (cgo).
+    # build-essential: cgo for go-sqlite3.
+    # docker.io + podman: install both CLIs at startup; the agent's
+    # OTA executor auto-detects which one is on PATH (docker first,
+    # then podman). Either binary will route through the mounted
+    # CONTAINER_SOCK (docker is REST-compatible with podman, and
+    # podman natively talks to its own socket).
     command: >
       bash -c "
-        apt-get update -qq && apt-get install -y -qq build-essential >/dev/null &&
+        apt-get update -qq && apt-get install -y -qq build-essential docker.io podman >/dev/null &&
         cd /src/agent &&
         CGO_ENABLED=1 go run ./cmd/agent
       "
 
 volumes:
-  bridge-sock:
   agent-data:
   go-cache:
   go-mod:

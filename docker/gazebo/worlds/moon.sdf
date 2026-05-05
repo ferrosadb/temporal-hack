@@ -105,6 +105,27 @@
         <material><ambient>0.18 0.17 0.16 1</ambient><diffuse>0.36 0.34 0.32 1</diffuse></material></visual></link>
     </model>
 
+    <!-- Big obstacle rock placed directly in the rover's forward path.
+         Rover spawns at origin pointing +x; a boulder at x=8 is hit
+         if the rover drives forward at any reasonable speed. -->
+    <model name="boulder">
+      <static>true</static>
+      <pose>8 0 0.50 0 0 0</pose>
+      <link name="link">
+        <collision name="c">
+          <geometry><ellipsoid><radii>0.90 0.80 0.50</radii></ellipsoid></geometry>
+        </collision>
+        <visual name="v">
+          <geometry><ellipsoid><radii>0.90 0.80 0.50</radii></ellipsoid></geometry>
+          <material>
+            <ambient>0.22 0.20 0.17 1</ambient>
+            <diffuse>0.45 0.41 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
     <!-- Perseverance rover (model lives at /opt/sim/models/perseverance) -->
     <include>
       <uri>model://perseverance</uri>

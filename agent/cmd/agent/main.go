@@ -106,10 +106,12 @@ func main() {
 		Logger:     logger,
 	})
 
+	dockerCLI := ota.NewDockerCLI(cfg.otaRunArgs)
+	logger.Info("ota engine resolved", "bin", dockerCLI.Bin())
 	exec := &ota.Executor{
 		RobotID: cfg.robotID,
 		MQTT:    pub.Client(),
-		Docker:  ota.NewDockerCLI(cfg.otaRunArgs),
+		Docker:  dockerCLI,
 		Logger:  logger,
 	}
 

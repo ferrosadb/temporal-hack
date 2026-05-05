@@ -30,6 +30,20 @@
       <collision name="deck_col">
         <geometry><box><size>1.20 1.40 0.40</size></box></geometry>
       </collision>
+
+      <!-- Contact sensor on the body. Pairs with the gz-sim contact
+           system plugin in moon.sdf; emits an ignition.msgs.Contacts
+           message whenever the deck collision touches anything. The
+           gazebo container's ros_gz_bridge republishes this onto a
+           ROS 2 topic. -->
+      <sensor name="bumper" type="contact">
+        <update_rate>10</update_rate>
+        <contact>
+          <collision>deck_col</collision>
+          <topic>/perseverance/contacts</topic>
+        </contact>
+      </sensor>
+
       <visual name="deck">
         <geometry><box><size>1.20 1.40 0.40</size></box></geometry>
         <material>

@@ -4,37 +4,74 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
 
-// DockerCLI is a thin wrapper over the local `docker` command. We use
-// the CLI rather than the Go SDK to keep the agent binary small and
-// avoid pinning a docker SDK version against the customer's daemon
-// version. The CLI is a contract that's far more stable than the SDK.
+// DockerCLI is a thin wrapper over the local container-engine
+// command. We use the CLI rather than a Go SDK to keep the agent
+// binary small and avoid pinning a docker/podman SDK version against
+// the customer's daemon version. The CLI surface (`pull`, `run`,
+// `inspect`, `rm`, `rename`, `exec`) is identical between docker and
+// podman, so the same code drives either engine — we just resolve
+// which binary is on PATH at startup.
 //
 // The container we manage is named "robot-app" by convention. v1
 // runs only one application container per robot.
+//
+// Engine selection (in order):
+//  1. AGENT_CONTAINER_BIN env var (explicit override)
+//  2. `docker` on PATH
+//  3. `podman` on PATH
 type DockerCLI struct {
 	ContainerName string   // default "robot-app"
-	RunArgs       []string // extra args passed at `docker run` (volumes, devices, network, env, etc.)
+	RunArgs       []string // extra args passed at `<bin> run` (volumes, devices, network, env, etc.)
+	bin           string   // resolved engine binary: "docker" or "podman"
 }
 
 func NewDockerCLI(runArgs []string) *DockerCLI {
-	return &DockerCLI{ContainerName: "robot-app", RunArgs: runArgs}
+	bin := os.Getenv("AGENT_CONTAINER_BIN")
+	if bin == "" {
+		if _, err := exec.LookPath("docker"); err == nil {
+			bin = "docker"
+		} else if _, err := exec.LookPath("podman"); err == nil {
+			bin = "podman"
+		} else {
+			// Last-ditch default; calls will fail loudly with
+			// `executable file not found` when the agent first OTAs.
+			bin = "docker"
+		}
+	}
+	return &DockerCLI{ContainerName: "robot-app", RunArgs: runArgs, bin: bin}
 }
 
-// Pull invokes `docker pull <ref>`.
+// Bin returns the resolved engine binary ("docker" or "podman").
+// Useful for logs.
+func (d *DockerCLI) Bin() string { return d.bin }
+
+// Pull invokes `<bin> pull <ref>`.
+//
+// Podman defaults to HTTPS-only registry traffic; override with
+// --tls-verify=false so the local lab registry on a plain-HTTP
+// localhost:14050 works without registries.conf surgery. Docker
+// uses its daemon-side `insecure-registries` config (set
+// per-environment) and does not accept the same flag.
 func (d *DockerCLI) Pull(ctx context.Context, ref string) error {
-	return run(ctx, "docker", "pull", ref)
+	args := []string{"pull"}
+	if d.bin == "podman" {
+		args = append(args, "--tls-verify=false")
+	}
+	args = append(args, ref)
+	return run(ctx, d.bin, args...)
 }
 
 // CurrentDigest returns the image digest of the running container, or
 // an empty string if no container is running.
 func (d *DockerCLI) CurrentDigest(ctx context.Context) (string, error) {
-	out, err := capture(ctx, "docker", "inspect", "--format", "{{.Image}}", d.ContainerName)
+	out, err := capture(ctx, d.bin, "inspect", "--format", "{{.Image}}", d.ContainerName)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such") {
+		if strings.Contains(err.Error(), "No such") || strings.Contains(err.Error(), "no such") {
 			return "", nil
 		}
 		return "", err
@@ -52,20 +89,20 @@ func (d *DockerCLI) Swap(ctx context.Context, ref string) (prevDigest string, er
 	args := []string{"run", "-d", "--name", tmpName}
 	args = append(args, d.RunArgs...)
 	args = append(args, ref)
-	if err := run(ctx, "docker", args...); err != nil {
-		return "", fmt.Errorf("docker run new: %w", err)
+	if err := run(ctx, d.bin, args...); err != nil {
+		return "", fmt.Errorf("%s run new: %w", d.bin, err)
 	}
 	// Verify it's actually running.
-	state, _ := capture(ctx, "docker", "inspect", "--format", "{{.State.Status}}", tmpName)
+	state, _ := capture(ctx, d.bin, "inspect", "--format", "{{.State.Status}}", tmpName)
 	if strings.TrimSpace(state) != "running" {
-		_ = run(ctx, "docker", "rm", "-f", tmpName)
+		_ = run(ctx, d.bin, "rm", "-f", tmpName)
 		return prevDigest, fmt.Errorf("new container not running (state=%s)", state)
 	}
 	// Stop+remove old (best effort).
-	_ = run(ctx, "docker", "rm", "-f", d.ContainerName)
-	if err := run(ctx, "docker", "rename", tmpName, d.ContainerName); err != nil {
-		_ = run(ctx, "docker", "rm", "-f", tmpName)
-		return prevDigest, fmt.Errorf("docker rename: %w", err)
+	_ = run(ctx, d.bin, "rm", "-f", d.ContainerName)
+	if err := run(ctx, d.bin, "rename", tmpName, d.ContainerName); err != nil {
+		_ = run(ctx, d.bin, "rm", "-f", tmpName)
+		return prevDigest, fmt.Errorf("%s rename: %w", d.bin, err)
 	}
 	return prevDigest, nil
 }
@@ -77,11 +114,11 @@ func (d *DockerCLI) Rollback(ctx context.Context, prevDigest string) error {
 	if prevDigest == "" {
 		return fmt.Errorf("no previous digest to roll back to")
 	}
-	_ = run(ctx, "docker", "rm", "-f", d.ContainerName)
+	_ = run(ctx, d.bin, "rm", "-f", d.ContainerName)
 	args := []string{"run", "-d", "--name", d.ContainerName}
 	args = append(args, d.RunArgs...)
 	args = append(args, prevDigest)
-	return run(ctx, "docker", args...)
+	return run(ctx, d.bin, args...)
 }
 
 // Exec runs a smoke command inside the named container and returns
@@ -90,7 +127,7 @@ func (d *DockerCLI) Exec(ctx context.Context, command string) error {
 	if command == "" {
 		return nil // no smoke check configured; treat as healthy
 	}
-	return run(ctx, "docker", "exec", d.ContainerName, "sh", "-c", command)
+	return run(ctx, d.bin, "exec", d.ContainerName, "sh", "-c", command)
 }
 
 // run executes a command, discarding output unless it fails.

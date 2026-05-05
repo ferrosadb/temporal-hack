@@ -7,13 +7,13 @@ type RolloutSpec struct {
 	ImageRef       string        `json:"image_ref"`
 	ImageDigest    string        `json:"image_digest"`
 	CohortSelector CohortFilter  `json:"cohort_selector"`
-	CanarySize     int           `json:"canary_size"`     // default 1
-	BatchPercent   int           `json:"batch_percent"`   // default 25
-	FailureBudget  int           `json:"failure_budget"`  // per-batch tolerated failures (count)
-	SmokeTimeout   time.Duration `json:"smoke_timeout"`   // default 5m
-	SmokeCommand   string        `json:"smoke_command"`   // executed in new container
-	PullTimeout    time.Duration `json:"pull_timeout"`    // default 15m
-	SwapTimeout    time.Duration `json:"swap_timeout"`    // default 2m
+	CanarySize     int           `json:"canary_size"`    // default 1
+	BatchPercent   int           `json:"batch_percent"`  // default 25
+	FailureBudget  int           `json:"failure_budget"` // per-batch tolerated failures (count)
+	SmokeTimeout   time.Duration `json:"smoke_timeout"`  // default 5m
+	SmokeCommand   string        `json:"smoke_command"`  // executed in new container
+	PullTimeout    time.Duration `json:"pull_timeout"`   // default 15m
+	SwapTimeout    time.Duration `json:"swap_timeout"`   // default 2m
 	Force          bool          `json:"force"`
 }
 
