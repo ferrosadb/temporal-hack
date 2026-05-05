@@ -123,10 +123,15 @@ make test          # go test -race -count=1 ./...
 
 # Lab stack (auto-detects docker vs podman)
 make container-info        # confirm the engine + compose command
-make lab-up                # Postgres + Temporal + MQTT + registry
+make lab-up                # validation cluster on 14xxx ports
 make lab-status            # probe ports
 make lab-down              # stop, keep state
 make lab-reset             # stop + wipe state
+
+# CI/smoke cluster — alternate ports (2xxxx); coexists with lab
+make ci-up                 # what the pre-push hook + GH Actions run
+make ci-status
+make ci-down               # tears down + wipes state
 
 # Sim (Gazebo + TurtleBot3 + bridge + agent in containers)
 make sim-up

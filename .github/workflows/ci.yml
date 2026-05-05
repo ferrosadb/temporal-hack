@@ -30,19 +30,21 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose -f installer/docker-compose/docker-compose.yml up -d --wait
+      - name: bring up CI cluster
+        run: make ci-up
         timeout-minutes: 6
-      - name: probe ports
+      - name: probe CI ports
         run: |
-          for port in 5432 7233 1883 5000; do
+          for port in 25432 27233 21883 25050; do
             for i in $(seq 1 30); do
               nc -z localhost "$port" && break
               sleep 2
             done
             nc -z localhost "$port" || { echo "port $port never came up"; exit 1; }
           done
-      - run: docker compose -f installer/docker-compose/docker-compose.yml down -v
+      - name: tear down
         if: always()
+        run: make ci-down
 
   python-lint:
     name: bridge lint

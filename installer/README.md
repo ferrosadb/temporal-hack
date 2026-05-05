@@ -20,6 +20,18 @@ make lab-down     # stop containers, keep state
 make lab-reset    # stop + wipe state
 ```
 
+## CI / smoke cluster (alternate ports)
+
+```bash
+make ci-up        # full stack on the 2xxxx port range
+make ci-status
+make ci-down      # tears down AND wipes state
+```
+
+`make ci-up` waits for every healthcheck to pass before returning
+(uses `compose up -d --wait`). The pre-push installer-smoke hook
+calls this target.
+
 ## Container engine
 
 `make` auto-detects `docker` or `podman` (in that order) and picks the
@@ -50,14 +62,19 @@ make lab-up CONTAINER=podman
 
 Default ports:
 
-| Service           | Port  |
-|-------------------|-------|
-| Postgres          | 5432  |
-| Temporal frontend | 7233  |
-| Temporal UI       | 8080  |
-| MQTT              | 1883  |
-| MQTT dashboard    | 18083 |
-| Registry          | 5000  |
+| Service           | Lab port | CI port |
+|-------------------|----------|---------|
+| Postgres          | 14432    | 25432   |
+| Temporal frontend | 14733    | 27233   |
+| Temporal UI       | 14080    | 28080   |
+| MQTT              | 14883    | 21883   |
+| MQTT dashboard    | 14093    | 28083   |
+| Registry          | 14050    | 25050   |
+
+The two clusters run under separate Compose project names
+(`temporal-hack-lab` and `temporal-hack-ci`) so they can be brought up
+**simultaneously**. `make ci-up` is what the GitHub Actions
+`installer-smoke` job and the local `pre-push` hook both run.
 
 ## Production-target gaps (tracked, not v1)
 

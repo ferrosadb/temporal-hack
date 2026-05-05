@@ -82,21 +82,25 @@ a lot. First build takes 10–20 min on a clean cache.
 With the lab + sim up:
 
 ```bash
-# Push an image to the lab registry
-docker tag busybox:latest localhost:5000/robot-app:v1
-docker push localhost:5000/robot-app:v1
+# Push an image to the lab registry (default port 14050)
+docker tag busybox:latest localhost:14050/robot-app:v1
+docker push localhost:14050/robot-app:v1
 
 # Run the OTA worker (separate terminal)
-./bin/ota-worker
+TEMPORAL_ADDR=localhost:14733 BROKER_URL=tcp://localhost:14883 \
+  TSDB_DSN="postgres://temporal:temporal@localhost:14432/telemetry?sslmode=disable" \
+  ./bin/ota-worker
 
 # Run the control plane (separate terminal)
-./bin/controlplane
+TEMPORAL_ADDR=localhost:14733 \
+  TSDB_DSN="postgres://temporal:temporal@localhost:14432/telemetry?sslmode=disable" \
+  ./bin/controlplane
 
 # Start a rollout
 curl -X POST http://localhost:8081/v1/ota/rollouts \
   -H "content-type: application/json" \
   -d '{
-    "image_ref": "localhost:5000/robot-app:v1",
+    "image_ref": "localhost:14050/robot-app:v1",
     "smoke_command": "true",
     "cohort_selector": {"robot_ids": ["sim-robot-01"]}
   }'

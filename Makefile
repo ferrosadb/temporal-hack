@@ -97,45 +97,100 @@ proto: ## Regenerate protobuf bindings
 		--grpc_python_out=bridge \
 		proto/*.proto
 
+# =============================================================================
+# Lab cluster (dev / validation) — default ports in the 14xxx range so
+# it can coexist with both other local services AND the CI cluster
+# (2xxxx range below).
+#   Postgres       14432
+#   Temporal       14733
+#   Temporal UI    14080
+#   MQTT           14883
+#   MQTT dashboard 14093
+#   Registry       14050
+#
+# Override any of POSTGRES_PORT TEMPORAL_PORT TEMPORAL_UI_PORT MQTT_PORT
+# MQTT_DASHBOARD_PORT REGISTRY_PORT to relocate.
+# =============================================================================
+
+LAB_PROJECT := temporal-hack-lab
+
 .PHONY: lab-up
 lab-up: container-check ## Bring up local lab stack (Postgres + Temporal + MQTT + registry)
 	@echo "[$(CONTAINER_ENGINE)] bringing up lab stack via '$(COMPOSE)'"
-	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) $(COMPOSE) up -d
+	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) \
+	  $(COMPOSE) -p $(LAB_PROJECT) up -d
 	@echo "Lab stack starting. Run 'make lab-status' to check."
 
 .PHONY: lab-down
 lab-down: container-check ## Tear down local lab stack
-	cd installer/docker-compose && $(COMPOSE) down
+	cd installer/docker-compose && $(COMPOSE) -p $(LAB_PROJECT) down
 
 .PHONY: lab-status
 lab-status: ## Probe lab services
-	@echo "--- engine: $(CONTAINER_ENGINE) (compose: $(COMPOSE)) ---"
-	@echo "--- Temporal frontend ---"
-	@curl -sf http://localhost:8080 >/dev/null && echo "Temporal UI: up" || echo "Temporal UI: down"
-	@echo "--- MQTT broker ---"
-	@nc -z localhost 1883 2>/dev/null && echo "MQTT 1883: up" || echo "MQTT 1883: down"
-	@echo "--- Postgres ---"
-	@pg_isready -h localhost -p 5432 -U temporal >/dev/null 2>&1 && echo "Postgres: up" || echo "Postgres: down"
-	@echo "--- Registry ---"
-	@curl -sf http://localhost:5000/v2/ >/dev/null && echo "Registry: up" || echo "Registry: down"
+	@LAB_TEMPORAL_UI_PORT="$${TEMPORAL_UI_PORT:-14080}"; \
+	 LAB_MQTT_PORT="$${MQTT_PORT:-14883}"; \
+	 LAB_POSTGRES_PORT="$${POSTGRES_PORT:-14432}"; \
+	 LAB_REGISTRY_PORT="$${REGISTRY_PORT:-14050}"; \
+	 echo "--- engine: $(CONTAINER_ENGINE) (compose: $(COMPOSE)) ---"; \
+	 nc -z localhost "$$LAB_TEMPORAL_UI_PORT" 2>/dev/null && echo "Temporal UI:    up   (:$$LAB_TEMPORAL_UI_PORT)" || echo "Temporal UI:    down (:$$LAB_TEMPORAL_UI_PORT)"; \
+	 nc -z localhost "$$LAB_MQTT_PORT"        2>/dev/null && echo "MQTT broker:    up   (:$$LAB_MQTT_PORT)"        || echo "MQTT broker:    down (:$$LAB_MQTT_PORT)"; \
+	 nc -z localhost "$$LAB_POSTGRES_PORT"    2>/dev/null && echo "Postgres:       up   (:$$LAB_POSTGRES_PORT)"    || echo "Postgres:       down (:$$LAB_POSTGRES_PORT)"; \
+	 nc -z localhost "$$LAB_REGISTRY_PORT"    2>/dev/null && echo "Registry:       up   (:$$LAB_REGISTRY_PORT)"    || echo "Registry:       down (:$$LAB_REGISTRY_PORT)"
 
 .PHONY: lab-reset
 lab-reset: container-check ## Wipe lab state and restart
-	cd installer/docker-compose && $(COMPOSE) down -v
+	cd installer/docker-compose && $(COMPOSE) -p $(LAB_PROJECT) down -v
 	$(MAKE) lab-up
+
+# =============================================================================
+# Sim overlay — Gazebo + bridge + agent on top of the lab cluster
+# =============================================================================
 
 .PHONY: sim-up
 sim-up: container-check ## Bring up the lab stack + a Gazebo robot sim with bridge + agent
 	@echo "[$(CONTAINER_ENGINE)] bringing up sim stack via '$(COMPOSE)'"
 	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) \
-	  $(COMPOSE) -f docker-compose.yml -f docker-compose.sim.yml up -d --build
+	  $(COMPOSE) -p $(LAB_PROJECT) -f docker-compose.yml -f docker-compose.sim.yml up -d --build
 
 .PHONY: sim-down
 sim-down: container-check ## Tear down the lab stack + sim
 	cd installer/docker-compose && \
-	  $(COMPOSE) -f docker-compose.yml -f docker-compose.sim.yml down
+	  $(COMPOSE) -p $(LAB_PROJECT) -f docker-compose.yml -f docker-compose.sim.yml down
 
 .PHONY: sim-logs
 sim-logs: container-check ## Tail logs from sim + agent
 	cd installer/docker-compose && \
-	  $(COMPOSE) -f docker-compose.yml -f docker-compose.sim.yml logs -f sim agent
+	  $(COMPOSE) -p $(LAB_PROJECT) -f docker-compose.yml -f docker-compose.sim.yml logs -f sim agent
+
+# =============================================================================
+# CI cluster (smoke / pre-push parity) — alternate ports so it can run
+# alongside `make lab-up` on the same host. Used by .git-hooks/installer-smoke.sh
+# and by .github/workflows/ci.yml.
+#   Postgres       25432
+#   Temporal       27233
+#   Temporal UI    28080
+#   MQTT           21883
+#   MQTT dashboard 28083
+#   Registry       25050
+# =============================================================================
+
+CI_PROJECT := temporal-hack-ci
+CI_FILES   := -f docker-compose.yml -f docker-compose.ci.yml
+
+.PHONY: ci-up
+ci-up: container-check ## Bring up an isolated CI/smoke cluster on alternate ports
+	@echo "[$(CONTAINER_ENGINE)] bringing up CI stack on alt ports"
+	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) \
+	  $(COMPOSE) -p $(CI_PROJECT) $(CI_FILES) up -d --wait
+
+.PHONY: ci-down
+ci-down: container-check ## Tear down the CI/smoke cluster (and wipe its volumes)
+	cd installer/docker-compose && $(COMPOSE) -p $(CI_PROJECT) $(CI_FILES) down -v
+
+.PHONY: ci-status
+ci-status: ## Probe CI services on their alternate ports
+	@echo "--- engine: $(CONTAINER_ENGINE) (compose: $(COMPOSE)) [ci] ---"
+	@nc -z localhost 28080 2>/dev/null && echo "Temporal UI:    up   (:28080)" || echo "Temporal UI:    down (:28080)"
+	@nc -z localhost 21883 2>/dev/null && echo "MQTT broker:    up   (:21883)" || echo "MQTT broker:    down (:21883)"
+	@nc -z localhost 25432 2>/dev/null && echo "Postgres:       up   (:25432)" || echo "Postgres:       down (:25432)"
+	@nc -z localhost 25050 2>/dev/null && echo "Registry:       up   (:25050)" || echo "Registry:       down (:25050)"

@@ -232,13 +232,13 @@ make lab-up
 make lab-status
 ```
 
-All four services should report `up`:
+All four services should report `up` on the 14xxx port range:
 
 ```
-Temporal UI: up
-MQTT 1883: up
-Postgres: up
-Registry: up
+Temporal UI:    up   (:14080)
+MQTT broker:    up   (:14883)
+Postgres:       up   (:14432)
+Registry:       up   (:14050)
 ```
 
 Tear down:
@@ -251,8 +251,23 @@ If a service stays `down`, look at logs:
 
 ```bash
 cd installer/docker-compose
-docker compose logs <service>      # or: podman compose logs <service>
+docker compose -p temporal-hack-lab logs <service>
+# or: podman compose -p temporal-hack-lab logs <service>
 ```
+
+### 6.1 Bring up the CI cluster too (optional)
+
+The same stack on alternate 2xxxx ports, isolated by Compose project
+name. Used by `installer-smoke` in CI and pre-push:
+
+```bash
+make ci-up
+make ci-status     # 25432 / 27233 / 28080 / 21883 / 25050
+make ci-down
+```
+
+`make lab-up` and `make ci-up` can run **at the same time** on the
+same host.
 
 ---
 

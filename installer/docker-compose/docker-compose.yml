@@ -22,7 +22,11 @@ services:
       POSTGRES_PASSWORD: temporal
       POSTGRES_DB: telemetry
     ports:
-      - "5432:5432"
+      # Default 14432 (not 5432). The full lab port set is in the
+      # 14xxx range to avoid colliding with common local services
+      # (Postgres on 5432, ferrosa-memory on 18080, Temporal on
+      # 7233, etc.). Override with POSTGRES_PORT.
+      - "${POSTGRES_PORT:-14432}:5432"
     volumes:
       - pgdata:/home/postgres/pgdata/data
       - ../../deploy/postgres/init-temporal.sql:/docker-entrypoint-initdb.d/01-temporal.sql:ro
@@ -47,7 +51,7 @@ services:
       POSTGRES_SEEDS: postgres
       DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig.yaml
     ports:
-      - "7233:7233"
+      - "${TEMPORAL_PORT:-14733}:7233"
     volumes:
       - ../../deploy/temporal/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig.yaml:ro
 
@@ -57,9 +61,9 @@ services:
       - temporal
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:8080
+      TEMPORAL_CORS_ORIGINS: http://localhost:${TEMPORAL_UI_PORT:-14080}
     ports:
-      - "8080:8080"
+      - "${TEMPORAL_UI_PORT:-14080}:8080"
 
   mqtt:
     # EMQX 5.x defaults: anonymous auth, listener on 1883, dashboard on
@@ -71,21 +75,25 @@ services:
     # version-pinned schema check.
     image: emqx/emqx:5.7.1
     ports:
-      - "1883:1883"   # MQTT
-      - "18083:18083" # dashboard
+      - "${MQTT_PORT:-14883}:1883"               # MQTT
+      - "${MQTT_DASHBOARD_PORT:-14093}:18083"    # dashboard
     volumes:
       - mqttdata:/opt/emqx/data
     healthcheck:
-      # /dev/tcp is a bash builtin; EMQX images include bash.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/1883 && exec 3<&- && exec 3>&-"]
+      # `emqx ctl status` is the documented EMQX 5.x liveness check.
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
       interval: 10s
       timeout: 5s
-      retries: 6
+      retries: 12
+      start_period: 20s
 
   registry:
     image: registry:2
     ports:
-      - "5000:5000"
+      # 5000 collides with macOS AirPlay Receiver. 14050 keeps the
+      # lab registry inside the 14xxx range with the rest of the lab
+      # stack. Override with REGISTRY_PORT.
+      - "${REGISTRY_PORT:-14050}:5000"
     volumes:
       - registrydata:/var/lib/registry
 

@@ -1,0 +1,32 @@
+# CI / smoke-test overlay.
+#
+# Starts the full lab stack on a non-default port range so it can run
+# alongside `make lab-up` (the dev/validation cluster) on the same
+# host. Used by `make ci-up` and by the pre-push installer-smoke hook.
+#
+# All host-side ports get +20000 versus the defaults. Container-side
+# ports are unchanged (services still talk to each other on the
+# canonical 1883/5432/7233/5000 inside the compose network).
+services:
+  postgres:
+    ports: !override
+      - "25432:5432"
+
+  temporal:
+    ports: !override
+      - "27233:7233"
+
+  temporal-ui:
+    environment:
+      TEMPORAL_CORS_ORIGINS: http://localhost:28080
+    ports: !override
+      - "28080:8080"
+
+  mqtt:
+    ports: !override
+      - "21883:1883"
+      - "28083:18083"
+
+  registry:
+    ports: !override
+      - "25050:5000"
