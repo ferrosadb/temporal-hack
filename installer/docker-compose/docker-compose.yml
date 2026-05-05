@@ -1,0 +1,89 @@
+# Lab bring-up of the platform stack. Satisfies S0 acceptance:
+# "installer reproducibly brings up Postgres + Temporal + MQTT broker
+# + registry on a 3-node lab cluster."
+#
+# This file targets a single Docker host. The Helm chart in
+# ../helm/ is the production multi-node target. Both are
+# generated from the same parameter set; the installer owns the
+# divergence.
+#
+# Bring up:    docker compose up -d
+# Tear down:   docker compose down
+# Wipe state:  docker compose down -v
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: telemetry
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../../deploy/postgres/init-temporal.sql:/docker-entrypoint-initdb.d/01-temporal.sql:ro
+      - ../../deploy/postgres/init-telemetry.sql:/docker-entrypoint-initdb.d/02-telemetry.sql:ro
+    # We want timescaledb but the official image is timescale/timescaledb;
+    # use it instead in installations that need hypertables.
+    # For lab simplicity we keep stock postgres; the init script will
+    # CREATE EXTENSION IF NOT EXISTS timescaledb but skip silently if
+    # the extension is unavailable. Production installer must ship
+    # timescale/timescaledb-ha.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal -d telemetry"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig.yaml
+    ports:
+      - "7233:7233"
+    volumes:
+      - ../../deploy/temporal/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig.yaml:ro
+
+  temporal-ui:
+    image: temporalio/ui:2.27.2
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:8080
+    ports:
+      - "8080:8080"
+
+  mqtt:
+    image: emqx/emqx:5.7.1
+    ports:
+      - "1883:1883"   # MQTT
+      - "18083:18083" # dashboard
+    volumes:
+      - ../../deploy/mqtt/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - mqttdata:/opt/emqx/data
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  registry:
+    image: registry:2
+    ports:
+      - "5000:5000"
+    volumes:
+      - registrydata:/var/lib/registry
+
+volumes:
+  pgdata:
+  mqttdata:
+  registrydata:

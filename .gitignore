@@ -1,0 +1,30 @@
+# Build artifacts
+/bin/
+**/dist/
+**/*.exe
+**/*.test
+**/*.out
+
+# Go
+**/vendor/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Local state
+*.db
+*.db-journal
+.env
+.env.local
+
+# Installer state
+installer/docker-compose/.data/
+installer/docker-compose/.secrets/
