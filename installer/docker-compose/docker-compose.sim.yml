@@ -47,6 +47,12 @@ services:
       BROKER_URL: tcp://mqtt:1883
       BUFFER_PATH: /var/lib/agent/buffer.db
       BRIDGE_ADDR: unix:///run/bridge/temporal-hack-bridge.sock
+      # OTA-spawned robot-app containers must join the lab network and
+      # share the sim's ROS_DOMAIN_ID so they can publish /cmd_vel into
+      # the same DDS partition the ros_gz_bridge listens on. Without
+      # this, OTA runs the container on the default bridge network and
+      # the new behaviour never reaches the simulated robot.
+      OTA_RUN_ARGS: "--network=temporal-hack-lab_default,-e,ROS_DOMAIN_ID=42,-e,RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
       # The repo is bind-mounted read-only. Go's workspace mode tries
       # to update go.work.sum on `go run` and fails; turn the workspace
       # off so the agent module's own go.mod/go.sum are authoritative.

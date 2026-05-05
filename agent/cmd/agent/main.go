@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/example/temporal-hack/agent/internal/buffer"
@@ -19,6 +20,7 @@ type config struct {
 	brokerURL   string
 	bufferPath  string
 	bridgeAddr  string
+	otaRunArgs  []string
 	heartbeatMs int
 }
 
@@ -28,6 +30,7 @@ func loadConfig() config {
 		brokerURL:   os.Getenv("BROKER_URL"),
 		bufferPath:  os.Getenv("BUFFER_PATH"),
 		bridgeAddr:  os.Getenv("BRIDGE_ADDR"),
+		otaRunArgs:  parseOTARunArgs(os.Getenv("OTA_RUN_ARGS")),
 		heartbeatMs: 10000,
 	}
 	flag.StringVar(&c.robotID, "robot-id", c.robotID, "stable robot identifier")
@@ -37,6 +40,24 @@ func loadConfig() config {
 	flag.IntVar(&c.heartbeatMs, "heartbeat-ms", c.heartbeatMs, "heartbeat interval in ms")
 	flag.Parse()
 	return c
+}
+
+// parseOTARunArgs splits a comma-separated env value into individual
+// docker-run flags. e.g. "--network=foo,-e,KEY=val" → 3 args.
+// Empty input yields a nil slice. Whitespace around each token is
+// trimmed; empty tokens (consecutive commas) are dropped.
+func parseOTARunArgs(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func firstNonEmpty(a, b string) string {
@@ -88,7 +109,7 @@ func main() {
 	exec := &ota.Executor{
 		RobotID: cfg.robotID,
 		MQTT:    pub.Client(),
-		Docker:  ota.NewDockerCLI(),
+		Docker:  ota.NewDockerCLI(cfg.otaRunArgs),
 		Logger:  logger,
 	}
 

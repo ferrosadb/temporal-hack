@@ -21,7 +21,7 @@ type Executor struct {
 	Docker  *DockerCLI
 	Logger  *slog.Logger
 
-	mu               sync.Mutex
+	mu                sync.Mutex
 	lastSuccessDigest string // digest before the most recent swap
 }
 
@@ -33,7 +33,7 @@ func (e *Executor) Start(ctx context.Context) error {
 	tok := e.MQTT.Subscribe(topic, 1, func(_ mqtt.Client, msg mqtt.Message) {
 		go e.handle(ctx, msg)
 	})
-	if !tok.WaitTimeout(10 * time.Second) || tok.Error() != nil {
+	if !tok.WaitTimeout(10*time.Second) || tok.Error() != nil {
 		return fmt.Errorf("subscribe %s: %w", topic, tok.Error())
 	}
 	e.Logger.Info("ota executor subscribed", "topic", topic)

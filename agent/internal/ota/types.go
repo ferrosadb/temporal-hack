@@ -27,11 +27,11 @@ type Command struct {
 
 // Ack is the JSON wire format published on ack/{robot_id}/ota.
 type Ack struct {
-	RolloutID            string    `json:"rollout_id"`
-	RobotID              string    `json:"robot_id"`
-	Phase                string    `json:"phase"`
-	Detail               string    `json:"detail,omitempty"`
-	At                   time.Time `json:"at"`
-	ImageDigest          string    `json:"image_digest,omitempty"`
-	PreviousImageDigest  string    `json:"previous_image_digest,omitempty"`
+	RolloutID           string    `json:"rollout_id"`
+	RobotID             string    `json:"robot_id"`
+	Phase               string    `json:"phase"`
+	Detail              string    `json:"detail,omitempty"`
+	At                  time.Time `json:"at"`
+	ImageDigest         string    `json:"image_digest,omitempty"`
+	PreviousImageDigest string    `json:"previous_image_digest,omitempty"`
 }
