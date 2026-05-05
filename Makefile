@@ -3,6 +3,27 @@ SHELL := /usr/bin/env bash
 CLOUD_PKG := ./cloud/...
 AGENT_PKG := ./agent/...
 
+# -----------------------------------------------------------------------------
+# Auto-install local git hooks on every `make` invocation. Idempotent:
+# if core.hooksPath is already .git-hooks this runs nothing. If it's
+# missing or pointed elsewhere, we set it. Done at parse time so it
+# fires for every target, including `make help`.
+#
+# Hooks live in .git-hooks/ (committed). Skip a step ad-hoc with:
+#   SKIP_CI_SMOKE=1 git push       # skip the installer smoke test
+#   SKIP_CI_HOOK=1 git push        # skip everything (emergency only)
+#   git push --no-verify           # ultimate bypass
+# -----------------------------------------------------------------------------
+ifeq ($(shell git rev-parse --is-inside-work-tree 2>/dev/null),true)
+  _CURRENT_HOOKS := $(shell git config core.hooksPath 2>/dev/null)
+  ifneq ($(_CURRENT_HOOKS),.git-hooks)
+    _BOOTSTRAP := $(shell git config core.hooksPath .git-hooks && echo bootstrapped)
+    ifeq ($(_BOOTSTRAP),bootstrapped)
+      $(info [hooks] core.hooksPath set to .git-hooks)
+    endif
+  endif
+endif
+
 # Container engine detection. Order: explicit override -> docker -> podman.
 # Override with `make lab-up CONTAINER=podman` if both are installed and
 # you want the non-default. The choice picks both the compose command
@@ -39,6 +60,16 @@ else
   COMPOSE := /bin/false
   CONTAINER_SOCK :=
 endif
+
+.PHONY: hooks-install
+hooks-install: ## Re-point git at .git-hooks/ (auto-runs on every make invocation)
+	git config core.hooksPath .git-hooks
+	@echo "git hooks: .git-hooks/{pre-commit,pre-push,commit-msg}"
+	@ls -1 .git-hooks/
+
+.PHONY: hooks-uninstall
+hooks-uninstall: ## Restore default .git/hooks/ path (rare; for debugging)
+	git config --unset core.hooksPath || true
 
 .PHONY: container-info
 container-info: ## Show detected container engine and compose command
@@ -88,14 +119,23 @@ test: ## Run unit tests
 	cd agent && go test -race -count=1 ./...
 
 .PHONY: proto
-proto: ## Regenerate protobuf bindings
-	@command -v protoc >/dev/null || { echo "protoc not installed"; exit 1; }
-	protoc \
-		--go_out=. --go_opt=module=github.com/example/temporal-hack \
-		--go-grpc_out=. --go-grpc_opt=module=github.com/example/temporal-hack \
-		--python_out=bridge \
-		--grpc_python_out=bridge \
-		proto/*.proto
+proto: container-check ## Regenerate Go + Python protobuf bindings via containerized protoc
+	@echo "[$(CONTAINER_ENGINE)] generating Go bindings"
+	$(CONTAINER_ENGINE) run --rm -v "$(PWD)":/work -w /work \
+	  rvolosatovs/protoc:4.0.0 \
+	  -I=. \
+	  --go_out=. --go_opt=module=github.com/example/temporal-hack \
+	  --go-grpc_out=. --go-grpc_opt=module=github.com/example/temporal-hack \
+	  proto/agent_bridge.proto proto/telemetry.proto proto/ota.proto
+	@echo "[$(CONTAINER_ENGINE)] generating Python bindings"
+	$(CONTAINER_ENGINE) run --rm --entrypoint sh \
+	  -v "$(PWD)":/work -w /work \
+	  python:3.11-slim \
+	  -c "pip install --quiet grpcio-tools && python -m grpc_tools.protoc -I=. --python_out=bridge/bridge_node/proto --grpc_python_out=bridge/bridge_node/proto proto/agent_bridge.proto proto/telemetry.proto proto/ota.proto"
+	@echo "fixing python relative imports"
+	@for f in bridge/bridge_node/proto/*.py; do \
+	  python3 -c "import re,sys; p=sys.argv[1]; s=open(p).read(); s=re.sub(r'^from proto import (\w+_pb2)', r'from . import \1', s, flags=re.M); open(p,'w').write(s)" "$$f"; \
+	done
 
 # =============================================================================
 # Lab cluster (dev / validation) — default ports in the 14xxx range so

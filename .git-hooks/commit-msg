@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# commit-msg git hook. Enforces conventional commit prefixes —
+# matches the .pre-commit-config.yaml `conventional-pre-commit` hook.
+#
+# Allowed prefixes: feat, fix, chore, docs, refactor, test, ci, build,
+# perf, style, revert
+set -euo pipefail
+
+msg_file="$1"
+first_line="$(head -n1 "$msg_file")"
+
+# Allow merge / revert / fixup commits to pass through unchanged.
+case "$first_line" in
+  Merge*|Revert*|fixup!*|squash!*) exit 0 ;;
+esac
+
+re='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([^)]+\))?!?: .+'
+if [[ ! "$first_line" =~ $re ]]; then
+  cat <<EOF >&2
+[commit-msg] First line must start with a conventional commit prefix:
+  feat: …    fix: …    chore: …    docs: …    refactor: …
+  test: …    ci: …     build: …    perf: …    style: …    revert: …
+
+Optional scope:    feat(api): add /v1/foo
+Optional breaking: feat!: drop legacy endpoint
+
+Got: $first_line
+EOF
+  exit 1
+fi

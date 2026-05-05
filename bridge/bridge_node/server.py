@@ -20,22 +20,14 @@ import logging
 import os
 import queue
 import signal
-import sys
 import threading
 import time
 from concurrent import futures
 
 import grpc
 
-# Generated bindings live alongside this module after running
-# `make proto` from the repo root. Imports are deferred so the file
-# is at least readable in environments without protoc available.
-try:
-    from . import agent_bridge_pb2 as pb  # noqa: F401
-    from . import agent_bridge_pb2_grpc as pbg  # noqa: F401
-    HAVE_PROTO = True
-except ImportError:  # pragma: no cover
-    HAVE_PROTO = False
+from .proto import agent_bridge_pb2 as pb
+from .proto import agent_bridge_pb2_grpc as pbg
 
 try:
     import rclpy
@@ -120,18 +112,28 @@ class BatterySubscriber(Node):  # pragma: no cover -- requires ROS at runtime
         self.create_subscription(BatteryState, "/battery_state", self._on_msg, 10)
 
     def _on_msg(self, msg: BatteryState) -> None:
+        import json as _json
+        from google.protobuf.timestamp_pb2 import Timestamp
+        now = Timestamp()
+        now.GetCurrentTime()
+        # JSON payload — small, debuggable in mosquitto_sub. Schema string
+        # tells the cloud-side decoder which keys to expect.
+        body = _json.dumps({
+            "voltage": float(msg.voltage),
+            "percentage": float(msg.percentage),
+            "present": bool(msg.present),
+            "status": int(msg.power_supply_status),
+        }).encode("utf-8")
         ev = pb.TopicEvent(
             stream="battery",
-            payload=str(msg.voltage).encode("utf-8"),
-            payload_schema="ros2:sensor_msgs/BatteryState@v1",
+            captured_at=now,
+            payload=body,
+            payload_schema="json:battery@v1",
         )
         self.fanout.push(ev)
 
 
 def serve(socket_path: str) -> None:
-    if not HAVE_PROTO:
-        sys.exit("protoc bindings missing; run `make proto` from repo root")
-
     fanout = TopicFanout()
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=8))

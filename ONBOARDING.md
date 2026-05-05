@@ -176,24 +176,46 @@ is incomplete; fetch again.
 
 ---
 
-## Section 4 — Pre-commit hooks
+## Section 4 — Git hooks
 
-Install hooks for both pre-commit and pre-push stages:
+Hooks are checked into `.git-hooks/` and activated automatically the
+first time you run any `make` target (the Makefile sets
+`core.hooksPath` at parse time). No `pre-commit install` step
+needed.
 
 ```bash
-pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
-pre-commit run --all-files       # first run takes a few minutes
+make hooks-install     # explicit reinstall (idempotent; auto-runs on every make)
+ls .git-hooks/         # pre-commit, pre-push, commit-msg + helpers
+git config core.hooksPath   # should print: .git-hooks
 ```
 
-The `--all-files` run primes caches for ruff, codespell, etc. After
-that, hooks run only against changed files. Pre-push will additionally
-run the full Go test matrix and a lab-stack smoke test (~5 min).
+### 4.1 What runs
 
-### 4.1 Bypass for emergencies
+- **pre-commit** — go fmt + go vet on staged Go files; pre-commit
+  framework's pre-commit hooks if installed (ruff, codespell, etc.).
+- **commit-msg** — conventional commit prefix check.
+- **pre-push** — full CI parity: `go test -race` for both modules,
+  bridge ruff, and the CI cluster smoke test
+  (`make ci-up` → port probe → `make ci-down`).
+
+### 4.2 Bypass envelope
 
 ```bash
-SKIP=installer-smoke git push       # skip just the smoke test
-git push --no-verify                # skip everything (do not abuse)
+SKIP_CI_SMOKE=1 git push       # skip the long installer-smoke step
+SKIP_CI_HOOK=1 git push        # skip every hook step (emergency)
+git push --no-verify           # ultimate bypass (do not abuse)
+```
+
+### 4.3 Optional: pre-commit framework
+
+The hooks call `pre-commit run` if the `pre-commit` binary is
+installed, picking up extras from `.pre-commit-config.yaml` like
+codespell, ruff, secrets detection, and YAML formatting. Without it,
+the core Go + smoke checks still fire — `pre-commit` is a nice-to-
+have, not a hard dep.
+
+```bash
+pip install --user pre-commit  # macOS / Linux
 ```
 
 ---

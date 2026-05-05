@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# pre-commit git hook. Installed via `core.hooksPath = .git-hooks`
+# (configured automatically by the Makefile on first invocation).
+#
+# This hook is the FAST path: only checks that don't need network or
+# container engines. The full CI surface runs at pre-push time.
+#
+# Skip everything (use sparingly):  git commit --no-verify
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# 1) pre-commit framework, if installed (gives us ruff, codespell, etc.)
+if command -v pre-commit >/dev/null 2>&1; then
+  pre-commit run --hook-stage pre-commit --from-ref HEAD --to-ref @{upstream} 2>/dev/null \
+    || pre-commit run --hook-stage pre-commit
+fi
+
+# 2) Always-on Go checks. These are FAST and don't need pre-commit.
+have_changes() { git diff --cached --name-only --diff-filter=ACM | grep -q "$1"; }
+
+if have_changes '^cloud/.*\.go$' || have_changes '^cloud/go\.\(mod\|sum\)$'; then
+  echo "[pre-commit] cloud: go fmt + go vet"
+  ( cd cloud && test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; } )
+  ( cd cloud && go vet ./... )
+fi
+
+if have_changes '^agent/.*\.go$' || have_changes '^agent/go\.\(mod\|sum\)$'; then
+  echo "[pre-commit] agent: go fmt + go vet"
+  ( cd agent && test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; } )
+  ( cd agent && go vet ./... )
+fi
+
+exit 0

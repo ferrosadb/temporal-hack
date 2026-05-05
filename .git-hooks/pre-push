@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# pre-push git hook. Mirrors what GitHub Actions runs in
+# .github/workflows/ci.yml, so a push that succeeds locally has
+# already been through the full CI surface.
+#
+# Jobs run, in order:
+#   1. go vet + go test -race for cloud
+#   2. go vet + go test -race for agent (CGO_ENABLED=1; go-sqlite3)
+#   3. ruff for bridge_node
+#   4. CI cluster smoke test (make ci-up + port probe + make ci-down)
+#
+# Skip a long step ad-hoc (do not abuse):
+#   SKIP_CI_SMOKE=1 git push       # skip step 4 only
+#   SKIP_CI_HOOK=1   git push      # skip everything (emergency only)
+#
+# Last resort:
+#   git push --no-verify           # bypass entirely; logged loudly
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+if [ "${SKIP_CI_HOOK:-0}" = "1" ]; then
+  echo "[pre-push] SKIP_CI_HOOK=1 — bypassing all checks (emergency mode)"
+  exit 0
+fi
+
+# Note: we deliberately don't invoke `pre-commit run --hook-stage pre-push`
+# here because the .pre-commit-config.yaml's pre-push hooks duplicate
+# what this script runs directly below. Pre-commit framework still runs
+# at pre-commit stage (ruff, codespell, secrets) via the sibling hook.
+
+run_step() {
+  local label="$1"; shift
+  echo "[pre-push] $label"
+  if "$@"; then
+    return 0
+  fi
+  echo "[pre-push] FAILED: $label"
+  return 1
+}
+
+failures=0
+
+# Toolchain check: bail loudly if go isn't on PATH. If you genuinely
+# don't have go installed, see ONBOARDING.md Section 1.2.
+if ! command -v go >/dev/null 2>&1; then
+  echo "[pre-push] FATAL: 'go' not on PATH — install Go 1.22+ (see ONBOARDING.md)"
+  echo "[pre-push] If you've already pushed and the build worked in CI, you can"
+  echo "[pre-push] override with SKIP_CI_HOOK=1 git push, but please install go."
+  exit 1
+fi
+
+# 1) Go: cloud
+if [ -d cloud ]; then
+  run_step "cloud: go vet"        bash -c "cd cloud && go vet ./..."           || failures=$((failures+1))
+  run_step "cloud: go test -race" bash -c "cd cloud && go test -race -count=1 ./..." || failures=$((failures+1))
+fi
+
+# 2) Go: agent (cgo for go-sqlite3)
+if [ -d agent ]; then
+  run_step "agent: go vet"        bash -c "cd agent && go vet ./..."           || failures=$((failures+1))
+  run_step "agent: go test -race" bash -c "cd agent && CGO_ENABLED=1 go test -race -count=1 ./..." || failures=$((failures+1))
+fi
+
+# 3) Python: bridge lint
+if [ -d bridge ]; then
+  if command -v ruff >/dev/null 2>&1; then
+    run_step "bridge: ruff" bash -c "cd bridge && ruff check bridge_node" || failures=$((failures+1))
+  else
+    echo "[pre-push] ruff not installed; skipping bridge lint (CI will catch it)"
+  fi
+fi
+
+# 4) CI cluster smoke (mirrors GH Actions installer-smoke job)
+if [ "${SKIP_CI_SMOKE:-0}" = "1" ]; then
+  echo "[pre-push] SKIP_CI_SMOKE=1 — skipping installer-smoke step"
+else
+  run_step "ci cluster smoke" bash .git-hooks/_installer-smoke.sh || failures=$((failures+1))
+fi
+
+if [ "$failures" -ne 0 ]; then
+  echo
+  echo "[pre-push] $failures step(s) failed. Fix them or push with --no-verify (logged)."
+  exit 1
+fi
+
+echo "[pre-push] all checks passed"
+exit 0

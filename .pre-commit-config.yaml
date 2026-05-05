@@ -62,7 +62,9 @@ repos:
 
       - id: go-mod-tidy-cloud
         name: go mod tidy verify (cloud)
-        entry: bash -c 'cd cloud && cp go.mod go.mod.bak && cp go.sum go.sum.bak 2>/dev/null || true; go mod tidy; r=0; diff -q go.mod go.mod.bak >/dev/null || r=1; diff -q go.sum go.sum.bak >/dev/null || r=1; mv go.mod.bak go.mod; mv go.sum.bak go.sum 2>/dev/null || true; [ $r -eq 0 ] || { echo "go mod tidy would change go.mod/go.sum in cloud"; exit 1; }'
+        entry: bash -c 'cd cloud && cp go.mod go.mod.bak && cp go.sum go.sum.bak 2>/dev/null || true; go mod tidy; r=0; diff -q go.mod go.mod.bak >/dev/null
+          || r=1; diff -q go.sum go.sum.bak >/dev/null || r=1; mv go.mod.bak go.mod; mv go.sum.bak go.sum 2>/dev/null || true; [ $r -eq 0 ] || { echo "go
+          mod tidy would change go.mod/go.sum in cloud"; exit 1; }'
         language: system
         files: ^cloud/(go\.mod|go\.sum|.*\.go)$
         pass_filenames: false
@@ -87,7 +89,9 @@ repos:
 
       - id: go-mod-tidy-agent
         name: go mod tidy verify (agent)
-        entry: bash -c 'cd agent && cp go.mod go.mod.bak && cp go.sum go.sum.bak 2>/dev/null || true; go mod tidy; r=0; diff -q go.mod go.mod.bak >/dev/null || r=1; diff -q go.sum go.sum.bak >/dev/null || r=1; mv go.mod.bak go.mod; mv go.sum.bak go.sum 2>/dev/null || true; [ $r -eq 0 ] || { echo "go mod tidy would change go.mod/go.sum in agent"; exit 1; }'
+        entry: bash -c 'cd agent && cp go.mod go.mod.bak && cp go.sum go.sum.bak 2>/dev/null || true; go mod tidy; r=0; diff -q go.mod go.mod.bak >/dev/null
+          || r=1; diff -q go.sum go.sum.bak >/dev/null || r=1; mv go.mod.bak go.mod; mv go.sum.bak go.sum 2>/dev/null || true; [ $r -eq 0 ] || { echo "go
+          mod tidy would change go.mod/go.sum in agent"; exit 1; }'
         language: system
         files: ^agent/(go\.mod|go\.sum|.*\.go)$
         pass_filenames: false
