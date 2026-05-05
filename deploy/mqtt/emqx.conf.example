@@ -1,0 +1,48 @@
+## EMQX configuration reference (NOT mounted by the lab compose).
+##
+## The lab compose runs EMQX 5.x with default config. This file is
+## the production-target reference — keys here match EMQX 5.7 schema
+## but **must** be re-validated against the version actually shipped
+## by the installer before mounting. Some keys move between 5.x point
+## releases (e.g. session_persistence -> durable_sessions, several
+## listener tunables) and a 127-exit container is hard to debug
+## downstream. Production installer should run `emqx ctl conf check`
+## or equivalent against the rendered config before swapping it in.
+##
+## v1 posture: anonymous + PSK allowed only inside the customer DC
+## perimeter. mTLS replaces this in S5–S6 (D-11). Do NOT expose this
+## broker to the public internet under this config.
+
+listeners.tcp.default {
+  bind = "0.0.0.0:1883"
+  max_connections = 10000
+}
+
+## Disable the dashboard on a public interface in production. For lab
+## bring-up we expose it on 18083 with default credentials so devs can
+## inspect sessions and topic flow.
+dashboard {
+  listeners.http {
+    bind = 18083
+  }
+  default_username = "admin"
+  default_password = "lab-only-rotate-me"
+}
+
+## Allow anonymous connections in lab. Override in production:
+##   authentication = [ { mechanism = password_based, ...} ]
+authentication = []
+
+## Generous defaults for telemetry / heartbeat traffic. Tune on
+## measured load in S2.
+mqtt {
+  max_inflight = 64
+  max_packet_size = 1MB
+  retain_available = false
+}
+
+## Persistent sessions backed by the broker's local RocksDB store so
+## QoS 1/2 messages survive broker restart and client disconnect.
+session_persistence {
+  enable = true
+}

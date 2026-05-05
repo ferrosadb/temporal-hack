@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package temporal_hack.bridge;
+
+option go_package = "github.com/example/temporal-hack/agent/internal/bridge/pb";
+
+import "google/protobuf/timestamp.proto";
+
+// gRPC contract between the Go robot agent and the ROS 2 bridge node.
+// Transport is gRPC over a Unix domain socket on the robot. Agent is
+// the client; bridge is the server.
+//
+// Design principle (D-06): the agent must NOT import ROS. All DDS
+// interaction is the bridge's responsibility. The agent treats the
+// bridge as an opaque source of structured topic events.
+
+service Bridge {
+  // Stream selected ROS 2 topic events to the agent. Bridge node
+  // owns the topic→stream mapping; agent picks streams by name.
+  rpc Subscribe(SubscribeRequest) returns (stream TopicEvent);
+
+  // Liveness probe.
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message SubscribeRequest {
+  // Stream names declared in the bridge's configuration. The bridge
+  // is the source of truth for topic→stream mapping; agent never
+  // names a ROS topic directly.
+  repeated string streams = 1;
+}
+
+message TopicEvent {
+  string stream = 1;
+  google.protobuf.Timestamp captured_at = 2;
+  bytes payload = 3;
+  string payload_schema = 4;
+  map<string, string> labels = 5;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  enum State {
+    UNKNOWN = 0;
+    HEALTHY = 1;
+    DEGRADED = 2;
+  }
+  State state = 1;
+  string detail = 2;
+  repeated string active_streams = 3;
+}

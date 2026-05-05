@@ -25,18 +25,18 @@ engineer-weeks effective.** Plan below allocates ~38 of those, leaving
 
 ## Sprint map
 
-| # | Sprint | Theme | Duration | Engineers | Outputs |
-|---|--------|-------|----------|-----------|---------|
-| 0 | S0 | Foundations + installer | 2 wk | 3 | Installer skeleton, Go monorepo, CI bootstrap, Postgres + Temporal up in lab |
-| 1 | S1 | Telemetry plumbing | 2 wk | 3 | MQTT broker installed; Go agent skeleton; bridge node skeleton; first telemetry event end-to-end |
-| 2 | S2 | Telemetry MVP | 2 wk | 3 | Buffered offline telemetry; TSDB chosen + integrated; operator dashboard read path |
-| 3 | S3 | OTA design + workflow scaffolding | 2 wk | 3 | Container registry installed; Temporal OTA workflow skeleton; image-pull on robot |
-| 4 | S4 | OTA MVP | 2 wk | 4 | Container swap on robot; rollback path; cohort + canary rollout policy |
-| 5 | S5 | Identity foundation | 2 wk | 2 | mTLS to broker; control-plane mTLS; certificate issuance flow |
-| 6 | S6 | Identity completion | 2 wk | 2 | Hardware-backed key story; image signing + verification; cert rotation |
-| 7 | S7 | Lab fleet integration | 2 wk | 4 | Run on 5–10 robot lab fleet; harden under intermittent network; runbooks |
-| 8 | S8 | Customer-prep hardening | 2 wk | 3 | Installer polish; HA topology docs; DR runbook; first customer onboarding plan |
-| 9–12 | (buffer) | Slack | 8 wk | varies | Incident response, mission-dispatch v1.5 prep, contingency |
+| # | Sprint | Theme | Duration | Engineers | Status | Outputs |
+|---|--------|-------|----------|-----------|--------|---------|
+| 0 | S0 | Foundations + installer | 2 wk | 3 | scaffolded | Installer, Go monorepo, CI, Postgres + Temporal + EMQX + registry up in lab |
+| 1 | S1 | Telemetry plumbing | 2 wk | 3 | scaffolded (bridge gRPC client TODO) | MQTT broker installed; Go agent; bridge node; stub telemetry path |
+| 2 | S2 | Telemetry MVP | 2 wk | 3 | scaffolded | SQLite buffer with WAL; TimescaleDB hypertable; operator read API |
+| 3 | S3 | OTA workflow + cohort + commands | 2 wk | 3 | landed | Temporal rollout/single/rollback workflows; MQTT command/ack bridge; cohort resolution; sim container |
+| 4 | S4 | OTA MVP — swap + rollback | 2 wk | 4 | landed | Agent docker swap (blue-green); per-phase acks; canary→25%→rest; failure budget |
+| 5 | S5 | Identity foundation | 2 wk | 2 | pending | mTLS to broker; control-plane mTLS; certificate issuance flow |
+| 6 | S6 | Identity completion | 2 wk | 2 | pending | Hardware-backed key story; image signing + verification; cert rotation |
+| 7 | S7 | Lab fleet integration | 2 wk | 4 | pending | Run on 5–10 robot lab fleet; harden under intermittent network; runbooks |
+| 8 | S8 | Customer-prep hardening | 2 wk | 3 | pending | Installer polish; HA topology docs; DR runbook; first customer onboarding plan |
+| 9–12 | (buffer) | Slack | 8 wk | varies | — | Incident response, mission-dispatch v1.5 prep, contingency |
 
 S5 + S6 = 4 weeks identity work. This matches the 2-sprint estimate in
 `todo/identity-mtls.md`. Identity MUST close before any customer ship

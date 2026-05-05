@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package temporal_hack.telemetry;
+
+option go_package = "github.com/example/temporal-hack/cloud/internal/telemetry/pb";
+
+import "google/protobuf/timestamp.proto";
+
+// Envelope wrapping every telemetry sample emitted by a robot.
+//
+// MQTT topic convention: tlm/{robot_id}/{stream}
+//   - {robot_id}: stable per-robot identifier (mTLS CN once D-11 lands; PSK-derived in v1)
+//   - {stream}:   short slug (e.g. "battery", "pose", "diag")
+//
+// One Sample is one MQTT message. Samples are batched in the agent
+// only at the buffer layer; on the wire each sample stands alone.
+message Sample {
+  string robot_id = 1;
+  string stream = 2;
+  google.protobuf.Timestamp captured_at = 3;
+  google.protobuf.Timestamp emitted_at = 4;
+  uint64 sequence = 5;          // monotonic per (robot_id, stream)
+  bytes payload = 6;            // opaque to transport; producer-defined schema
+  string payload_schema = 7;    // e.g. "ros2:sensor_msgs/BatteryState@v1"
+  map<string, string> labels = 8;
+}
+
+// Heartbeat sent by the agent on a fixed interval. Acts as liveness
+// signal and as a way for the cloud to detect a fleet member that has
+// fallen silent. Carries a small subset of agent self-state.
+message Heartbeat {
+  string robot_id = 1;
+  google.protobuf.Timestamp emitted_at = 2;
+  string agent_version = 3;
+  string ota_image_digest = 4;  // currently-running container digest
+  uint64 buffered_samples = 5;
+  string status = 6;             // "ok" | "degraded" | "offline-pending"
+}

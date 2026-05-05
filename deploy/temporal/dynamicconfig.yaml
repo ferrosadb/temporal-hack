@@ -1,0 +1,11 @@
+# Temporal dynamic config — lab defaults. Tune in S0 once we know
+# real workflow shapes. This file is loaded by the temporal server
+# when started via the auto-setup image used by docker-compose.
+
+system.advancedVisibilityWritingMode:
+  - value: "off"
+    constraints: {}
+
+frontend.workerVersioningRules.acceptableProtocolVersions:
+  - value: 1
+    constraints: {}

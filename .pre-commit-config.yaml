@@ -41,48 +41,99 @@ repos:
         args: ["--exclude-files", ".*\\.ipynb", "--exclude-files", ".*\\.lock"]
 
   # ===========================================================================
-  # Rust: temporal-hack
+  # Go: cloud module — pre-commit
+  # Mirrors .github/workflows/ci.yml `go` job for the cloud module.
   # ===========================================================================
   - repo: local
     hooks:
-      - id: cargo-fmt
-        name: cargo fmt
-        entry: bash -c 'cargo fmt -- --check'
+      - id: go-fmt-cloud
+        name: go fmt (cloud)
+        entry: bash -c 'cd cloud && test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }'
         language: system
-        files: \.rs$
+        files: ^cloud/.*\.go$
         pass_filenames: false
 
-      - id: cargo-clippy
-        name: cargo clippy
-        entry: bash -c 'cargo clippy -- -D warnings'
+      - id: go-vet-cloud
+        name: go vet (cloud)
+        entry: bash -c 'cd cloud && go vet ./...'
         language: system
-        files: \.rs$
+        files: ^cloud/.*\.go$
         pass_filenames: false
 
-      # Security: fast offline advisory + license policy check on every commit
-      - id: cargo-deny
-        name: cargo deny
-        entry: bash -c 'cargo deny check advisories licenses'
+      - id: go-mod-tidy-cloud
+        name: go mod tidy verify (cloud)
+        entry: bash -c 'cd cloud && cp go.mod go.mod.bak && cp go.sum go.sum.bak 2>/dev/null || true; go mod tidy; r=0; diff -q go.mod go.mod.bak >/dev/null || r=1; diff -q go.sum go.sum.bak >/dev/null || r=1; mv go.mod.bak go.mod; mv go.sum.bak go.sum 2>/dev/null || true; [ $r -eq 0 ] || { echo "go mod tidy would change go.mod/go.sum in cloud"; exit 1; }'
         language: system
-        files: ^Cargo\.(toml|lock)$
+        files: ^cloud/(go\.mod|go\.sum|.*\.go)$
         pass_filenames: false
 
-      # Security: full advisory database scan on push (requires network)
-      - id: cargo-audit
-        name: cargo audit
+      # ========================================================================
+      # Go: agent module — pre-commit
+      # Mirrors .github/workflows/ci.yml `go` job for the agent module.
+      # ========================================================================
+      - id: go-fmt-agent
+        name: go fmt (agent)
+        entry: bash -c 'cd agent && test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }'
+        language: system
+        files: ^agent/.*\.go$
+        pass_filenames: false
+
+      - id: go-vet-agent
+        name: go vet (agent)
+        entry: bash -c 'cd agent && go vet ./...'
+        language: system
+        files: ^agent/.*\.go$
+        pass_filenames: false
+
+      - id: go-mod-tidy-agent
+        name: go mod tidy verify (agent)
+        entry: bash -c 'cd agent && cp go.mod go.mod.bak && cp go.sum go.sum.bak 2>/dev/null || true; go mod tidy; r=0; diff -q go.mod go.mod.bak >/dev/null || r=1; diff -q go.sum go.sum.bak >/dev/null || r=1; mv go.mod.bak go.mod; mv go.sum.bak go.sum 2>/dev/null || true; [ $r -eq 0 ] || { echo "go mod tidy would change go.mod/go.sum in agent"; exit 1; }'
+        language: system
+        files: ^agent/(go\.mod|go\.sum|.*\.go)$
+        pass_filenames: false
+
+      # ========================================================================
+      # Python: bridge — pre-commit
+      # Mirrors .github/workflows/ci.yml `python-lint` job.
+      # ========================================================================
+      - id: ruff-bridge
+        name: ruff (bridge)
+        entry: bash -c 'cd bridge && command -v ruff >/dev/null || pip install --quiet ruff; ruff check bridge_node'
+        language: system
+        files: ^bridge/.*\.py$
+        pass_filenames: false
+
+      # ========================================================================
+      # Pre-push: matches CI go test step.
+      # CGO is required because agent uses go-sqlite3.
+      # ========================================================================
+      - id: go-test-cloud
+        name: go test -race (cloud)
         stages: [pre-push]
-        entry: bash -c 'cargo audit --deny warnings'
+        entry: bash -c 'cd cloud && go test -race -count=1 ./...'
         language: system
-        files: ^Cargo\.(toml|lock)$
+        files: ^cloud/.*\.go$
         pass_filenames: false
 
-      # Pre-push: Tests
-      - id: cargo-test
-        name: cargo test
+      - id: go-test-agent
+        name: go test -race (agent)
         stages: [pre-push]
-        entry: bash -c 'cargo test --all'
+        entry: bash -c 'cd agent && CGO_ENABLED=1 go test -race -count=1 ./...'
         language: system
-        files: \.rs$
+        files: ^agent/.*\.go$
+        pass_filenames: false
+
+      # ========================================================================
+      # Pre-push: installer smoke test — mirrors CI `installer-smoke` job.
+      # Slow (~5–6 min) and requires docker/podman + free ports. Skip with:
+      #   SKIP=installer-smoke git push
+      # ========================================================================
+      - id: installer-smoke
+        name: installer smoke (lab stack up + ports probe)
+        stages: [pre-push]
+        entry: bash -c '.git-hooks/installer-smoke.sh'
+        language: system
+        files: ^(installer/|deploy/|\.github/workflows/ci\.yml).*$
         pass_filenames: false
 
   # ===========================================================================

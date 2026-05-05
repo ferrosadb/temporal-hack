@@ -1,0 +1,19 @@
+[project]
+name = "temporal-hack-bridge"
+version = "0.1.0"
+description = "ROS 2 bridge node — republishes selected DDS topics to the Go robot agent over gRPC."
+requires-python = ">=3.10"
+dependencies = [
+    "grpcio>=1.64.0",
+    "grpcio-tools>=1.64.0",
+    "protobuf>=4.25",
+    # ROS 2 Python deps (rclpy, sensor_msgs, etc.) are provided by the
+    # ROS 2 distribution at runtime and are NOT pinned here.
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["bridge_node*"]
