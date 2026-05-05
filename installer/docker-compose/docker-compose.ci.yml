@@ -11,22 +11,18 @@ services:
   postgres:
     ports: !override
       - "25432:5432"
-
   temporal:
     ports: !override
       - "27233:7233"
-
   temporal-ui:
     environment:
       TEMPORAL_CORS_ORIGINS: http://localhost:28080
     ports: !override
       - "28080:8080"
-
   mqtt:
     ports: !override
       - "21883:1883"
       - "28083:18083"
-
   registry:
     ports: !override
       - "25050:5000"

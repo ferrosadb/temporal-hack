@@ -158,25 +158,38 @@ End-to-end OTA walkthrough lives in `ONBOARDING.md` Section 9.
 - Use `push-it` (`/push-it`) for guided pushes that include the PR
   body template.
 
-## Pre-push CI parity
+## Pre-push CI parity (HARD GATE)
 
-`pre-commit` is configured so that **everything CI runs locally before
-push**:
+Local git hooks live in `.git-hooks/` and are activated automatically
+the first time anyone runs `make` (the Makefile sets `core.hooksPath
+= .git-hooks` at parse time — idempotent, no opt-in step). This is
+the rule that catches "I forgot to run the tests before pushing":
+there is no way to push without the hook firing unless you pass
+`--no-verify`.
 
-| CI job             | Local hook stage        |
-|--------------------|-------------------------|
-| `go cloud`         | pre-commit (vet, fmt) + pre-push (test) |
-| `go agent`         | pre-commit (vet, fmt) + pre-push (test) |
-| `python-lint`      | pre-commit (ruff)       |
-| `installer-smoke`  | pre-push (`installer-smoke` hook → `.git-hooks/installer-smoke.sh`) |
+| Hook         | Runs                                                                |
+|--------------|---------------------------------------------------------------------|
+| `pre-commit` | go fmt + go vet on staged Go modules; pre-commit framework if installed (ruff, codespell). |
+| `commit-msg` | conventional commit prefix check.                                   |
+| `pre-push`   | go test -race for both modules; ruff for bridge; CI cluster smoke (`make ci-up`, port probe, `make ci-down`). |
 
-If `pre-push` is slow (~5 min on cold image cache), use:
+Bypass envelope (use sparingly, in this order of preference):
 
 ```bash
-SKIP=installer-smoke git push
+SKIP_CI_SMOKE=1 git push       # skip the long installer-smoke step
+SKIP_CI_HOOK=1 git push        # skip every hook step (emergency)
+git push --no-verify           # ultimate bypass
 ```
 
-…but expect to fix it on the next push, not skip permanently.
+If the pre-push hook fails, do not bypass — fix the underlying issue.
+The hook exists because at least one prior push to `main` had to be
+fixed in CI; we now refuse to delegate that to the runner.
+
+To re-install the hook config explicitly:
+
+```bash
+make hooks-install
+```
 
 ## Skills available in this repo
 

@@ -118,7 +118,7 @@ Customer prep:
 
 ## Deliverable per sprint
 
-S0: 
+S0:
 - repo skeleton with linting + unit test scaffolding
 - installer reproducibly brings up Postgres + Temporal + MQTT broker + registry on a 3-node lab cluster
 - CI pipeline runs on PRs
