@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
-# Source ROS 2 + the TurtleBot3 launch tree.
+# ROS 2's setup.bash references variables it doesn't always pre-set
+# (AMENT_TRACE_SETUP_FILES, etc.). Disable nounset for the source
+# step only; turn it back on for our own logic afterwards.
+set +u
 source /opt/ros/humble/setup.bash
+set -u
 
-TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-burger}"
-WORLD="${WORLD:-empty_world.launch.py}"
 BRIDGE_SOCKET="${BRIDGE_SOCKET:-/run/bridge/temporal-hack-bridge.sock}"
 HEADLESS="${HEADLESS:-0}"   # default 0: show the GUI via noVNC.
                              # Set HEADLESS=1 to skip the X stack entirely.
 DISPLAY_NUM="${DISPLAY_NUM:-1}"
-SCREEN_GEOMETRY="${SCREEN_GEOMETRY:-1280x800x24}"
+SCREEN_GEOMETRY="${SCREEN_GEOMETRY:-1920x1200x24}"
 
 mkdir -p "$(dirname "$BRIDGE_SOCKET")"
 
@@ -23,9 +25,11 @@ shutdown() {
 }
 trap shutdown SIGINT SIGTERM
 
+SIM_WORLD="${SIM_WORLD:-diff_drive.sdf}"
+
 if [ "$HEADLESS" = "1" ]; then
-    echo "[sim] HEADLESS=1; running gzserver only (no display)"
-    ros2 launch turtlebot3_gazebo "$WORLD" gui:=false &
+    echo "[sim] HEADLESS=1; running ign gazebo server only ($SIM_WORLD)"
+    ign gazebo -s -v 4 "$SIM_WORLD" &
     PIDS+=($!)
 else
     # Start a virtual X display, a minimal window manager, a VNC
@@ -51,15 +55,19 @@ else
     websockify --web=/usr/share/novnc 6080 localhost:5900 &
     PIDS+=($!)
 
-    echo "[sim] launching Gazebo with GUI (DISPLAY=$DISPLAY)"
-    ros2 launch turtlebot3_gazebo "$WORLD" gui:=true &
+    echo "[sim] launching Ignition Fortress with GUI: $SIM_WORLD"
+    # Software OpenGL is the only path that works in Xvfb (no GPU).
+    # OGRE2 will use Mesa's llvmpipe and render to the virtual fb.
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export OGRE2_RTSHADERSYSTEM_WRITE_SHADERS_TO_DISK=0
+    ign gazebo -v 4 "$SIM_WORLD" &
     PIDS+=($!)
 
     echo
-    echo "  ┌────────────────────────────────────────────────────────────┐"
-    echo "  │  Gazebo GUI:  http://localhost:14680/vnc.html?autoconnect=1│"
-    echo "  │  Raw VNC:     localhost:14900   (no password)              │"
-    echo "  └────────────────────────────────────────────────────────────┘"
+    echo "  ┌──────────────────────────────────────────────────────────────────────────────┐"
+    echo "  │  Gazebo GUI:  http://localhost:14680/vnc.html?autoconnect=1&resize=scale     │"
+    echo "  │  Raw VNC:     localhost:14900   (no password)                                │"
+    echo "  └──────────────────────────────────────────────────────────────────────────────┘"
     echo
 fi
 

@@ -200,7 +200,7 @@ sim-up: container-check ## Bring up the lab stack + a Gazebo robot sim (GUI on :
 	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) \
 	  $(COMPOSE) -p $(LAB_PROJECT) -f docker-compose.yml -f docker-compose.sim.yml up -d --build
 	@echo
-	@echo "  Gazebo GUI:  http://localhost:14680/vnc.html?autoconnect=1"
+	@echo "  Gazebo GUI:  http://localhost:14680/vnc.html?autoconnect=1&resize=scale"
 	@echo "  Raw VNC:     localhost:14900  (no password)"
 	@echo "  Tail logs:   make sim-logs"
 
@@ -222,7 +222,7 @@ sim-logs: container-check ## Tail logs from sim + agent
 
 .PHONY: sim-gui
 sim-gui: ## Open the Gazebo GUI in the default browser
-	@URL="http://localhost:14680/vnc.html?autoconnect=1&resize=remote"; \
+	@URL="http://localhost:14680/vnc.html?autoconnect=1&resize=scale"; \
 	 echo "$$URL"; \
 	 (command -v open  >/dev/null && open  "$$URL") || \
 	 (command -v xdg-open >/dev/null && xdg-open "$$URL") || \

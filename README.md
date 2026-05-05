@@ -77,7 +77,7 @@ make sim-down
 ```
 
 The Gazebo GUI is served via noVNC; just hit
-`http://localhost:14680/vnc.html?autoconnect=1` in any browser. No
+`http://localhost:14680/vnc.html?autoconnect=1&resize=scale` in any browser. No
 X11, no XQuartz, no platform-specific setup. Raw VNC clients can use
 `localhost:14900`.
 
