@@ -89,9 +89,11 @@ services:
 
   registry:
     image: registry:2
-    # Host 5001 avoids conflicts with macOS AirPlay (5000). Container still listens on 5000.
     ports:
-      - "5001:5000"
+      # 14050 keeps the lab registry inside the 14xxx range with the
+      # rest of the lab stack (matches the Makefile's lab-status
+      # default). Override with REGISTRY_PORT.
+      - "${REGISTRY_PORT:-14050}:5000"
     volumes:
       - registrydata:/var/lib/registry
 
