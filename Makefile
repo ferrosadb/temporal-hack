@@ -437,6 +437,44 @@ sim-drive-stop: ## Stop the rover
 CI_PROJECT := temporal-hack-ci
 CI_FILES   := -f docker-compose.yml -f docker-compose.ci.yml
 
+# =============================================================================
+# Demo reset — wipes all transient demo state and (optionally) brings
+# the stack back up clean.
+#
+#   make demo-reset           stops everything, wipes volumes + .run/,
+#                             and BRINGS THE STACK BACK UP fresh
+#   make demo-reset NOUP=1    same, but stops short of starting again
+# =============================================================================
+
+.PHONY: demo-reset
+demo-reset: container-check ## Stop everything, wipe demo state, and start fresh (NOUP=1 to skip the bring-up)
+	@echo "[demo-reset] stopping host-side processes"
+	-@$(MAKE) -s controlplane-down
+	-@$(MAKE) -s workers-down
+	-@$(MAKE) -s agent-down
+	@echo "[demo-reset] killing OTA-spawned robot-app containers"
+	-@$(CONTAINER_ENGINE) rm -f robot-app robot-app-new >/dev/null 2>&1 || true
+	@echo "[demo-reset] tearing down sim + lab compose, wiping volumes"
+	-@cd installer/docker-compose && $(COMPOSE) -p $(LAB_PROJECT) \
+	  -f docker-compose.yml -f docker-compose.sim.yml down -v >/dev/null 2>&1 || true
+	@echo "[demo-reset] clearing .run/ pid files and logs"
+	@rm -rf .run/
+	@if [ "$${NOUP:-0}" = "1" ]; then \
+	  echo "[demo-reset] NOUP=1 — stopping after teardown"; \
+	  exit 0; \
+	fi
+	@echo "[demo-reset] bringing the stack back up"
+	@$(MAKE) -s sim-up
+	@$(MAKE) -s agent-up
+	@$(MAKE) -s workers-up
+	@$(MAKE) -s controlplane-up
+	@echo
+	@echo "  demo reset complete. Re-run a demo:"
+	@echo "    make ota-circle"
+	@echo "    make collide"
+	@echo "  GUI: http://localhost:14680/vnc.html?autoconnect=1&resize=scale"
+	@echo "  Temporal UI: http://localhost:14080"
+
 .PHONY: ci-up
 ci-up: container-check ## Bring up an isolated CI/smoke cluster on alternate ports
 	@echo "[$(CONTAINER_ENGINE)] bringing up CI stack on alt ports"
