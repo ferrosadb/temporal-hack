@@ -1,28 +1,35 @@
 <?xml version="1.0"?>
 <!--
-  Perseverance (Mars 2020 rover) — primitives stand-in.
-  Approximate dimensions per JPL public spec:
-    length     3.0 m
-    width      2.7 m (wheel-to-wheel)
-    height     2.2 m (top of mast)
-    body deck  1.2 x 1.4 x 0.40 m at z=0.65
-    wheel      d=0.525 m, w=0.20 m  (rocker-bogie: 6 wheels)
-    RTG        ~0.32 m diameter, 0.45 m long, mounted at the rear
-    mass       899 kg (Earth)
-  Static for v1 — visible, doesn't drive. The robotic arm is shown
-  in stowed/folded pose along the front-right of the deck.
+  Perseverance (Mars 2020 rover) — primitives stand-in, drivable.
+
+  Body deck + RTG + mast + arm + rocker rails are all visuals on the
+  single dynamic `body` link. The six wheels are separate links
+  joined to the body via revolute joints. The DiffDrive plugin
+  groups left wheels (fl/ml/rl) and right wheels (fr/mr/rr) and
+  drives them in lock-step from a /model/perseverance/cmd_vel topic.
+
+  This is a simplified model: there is no rocker-bogie suspension
+  (no shoulder/diff joints), so the rover behaves like a tank with
+  three driven wheels per side. Good enough to "make it move".
 -->
 <sdf version="1.9">
   <model name="perseverance">
-    <static>true</static>
 
-    <!-- Main body (deck) -->
+    <!-- ===== Body: every non-rotating piece is a visual on this link.
+         Mass + inertia approximate the real rover's 899 kg minus the
+         six wheels at ~30 kg each. ===== -->
     <link name="body">
       <pose>0 0 0.65 0 0 0</pose>
       <inertial>
         <mass>700</mass>
-        <inertia><ixx>120</ixx><iyy>140</iyy><izz>200</izz></inertia>
+        <inertia>
+          <ixx>120</ixx><iyy>140</iyy><izz>200</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
       </inertial>
+      <collision name="deck_col">
+        <geometry><box><size>1.20 1.40 0.40</size></box></geometry>
+      </collision>
       <visual name="deck">
         <geometry><box><size>1.20 1.40 0.40</size></box></geometry>
         <material>
@@ -36,12 +43,10 @@
         <geometry><box><size>1.10 1.30 0.04</size></box></geometry>
         <material><ambient>0.30 0.28 0.25 1</ambient><diffuse>0.55 0.51 0.46 1</diffuse></material>
       </visual>
-    </link>
 
-    <!-- RTG: cylindrical generator at the rear -->
-    <link name="rtg">
-      <pose>-0.85 0 0.85 0 1.5708 0</pose>
-      <visual name="rtg_body">
+      <!-- RTG -->
+      <visual name="rtg">
+        <pose>-0.85 0 0.20 0 1.5708 0</pose>
         <geometry><cylinder><radius>0.16</radius><length>0.45</length></cylinder></geometry>
         <material>
           <ambient>0.25 0.22 0.18 1</ambient>
@@ -49,105 +54,196 @@
           <specular>0.25 0.25 0.25 1</specular>
         </material>
       </visual>
-    </link>
 
-    <!-- Mast: vertical pole + camera "head" -->
-    <link name="mast_pole">
-      <pose>0.50 0 1.30 0 0 0</pose>
-      <visual name="pole">
+      <!-- Mast pole + camera head -->
+      <visual name="mast_pole">
+        <pose>0.50 0 0.65 0 0 0</pose>
         <geometry><cylinder><radius>0.05</radius><length>1.20</length></cylinder></geometry>
         <material><ambient>0.30 0.28 0.25 1</ambient><diffuse>0.55 0.51 0.46 1</diffuse></material>
       </visual>
-    </link>
-    <link name="mast_head">
-      <pose>0.50 0 1.95 0 0 0</pose>
-      <visual name="head">
+      <visual name="mast_head">
+        <pose>0.50 0 1.30 0 0 0</pose>
         <geometry><box><size>0.32 0.20 0.18</size></box></geometry>
         <material><ambient>0.20 0.20 0.22 1</ambient><diffuse>0.30 0.30 0.32 1</diffuse></material>
       </visual>
       <visual name="cam_left">
-        <pose>0.18 0.06 0 0 1.5708 0</pose>
+        <pose>0.68 0.06 1.30 0 1.5708 0</pose>
         <geometry><cylinder><radius>0.035</radius><length>0.06</length></cylinder></geometry>
         <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.10 0.10 0.10 1</diffuse><specular>0.6 0.6 0.6 1</specular></material>
       </visual>
       <visual name="cam_right">
-        <pose>0.18 -0.06 0 0 1.5708 0</pose>
+        <pose>0.68 -0.06 1.30 0 1.5708 0</pose>
         <geometry><cylinder><radius>0.035</radius><length>0.06</length></cylinder></geometry>
         <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.10 0.10 0.10 1</diffuse><specular>0.6 0.6 0.6 1</specular></material>
       </visual>
-    </link>
 
-    <!-- Robotic arm in stowed pose along the front-right of the deck -->
-    <link name="arm_segment_1">
-      <pose>0.50 -0.65 0.85 0 0 -0.4</pose>
-      <visual name="v">
+      <!-- Stowed robotic arm -->
+      <visual name="arm_seg_1">
+        <pose>0.50 -0.65 0.20 0 0 -0.4</pose>
         <geometry><cylinder><radius>0.05</radius><length>0.55</length></cylinder></geometry>
         <material><ambient>0.30 0.28 0.25 1</ambient><diffuse>0.55 0.51 0.46 1</diffuse></material>
       </visual>
-    </link>
-    <link name="arm_segment_2">
-      <pose>0.78 -0.55 0.85 0 1.2 -0.4</pose>
-      <visual name="v">
+      <visual name="arm_seg_2">
+        <pose>0.78 -0.55 0.20 0 1.2 -0.4</pose>
         <geometry><cylinder><radius>0.045</radius><length>0.45</length></cylinder></geometry>
         <material><ambient>0.30 0.28 0.25 1</ambient><diffuse>0.55 0.51 0.46 1</diffuse></material>
       </visual>
-    </link>
-    <link name="arm_turret">
-      <pose>0.95 -0.40 0.45 0 0 0</pose>
-      <visual name="v">
+      <visual name="arm_turret">
+        <pose>0.95 -0.40 -0.20 0 0 0</pose>
         <geometry><box><size>0.18 0.18 0.16</size></box></geometry>
         <material><ambient>0.20 0.20 0.22 1</ambient><diffuse>0.30 0.30 0.32 1</diffuse></material>
       </visual>
+
+      <!-- Rocker rails (cosmetic) -->
+      <visual name="rocker_l">
+        <pose>0 0.95 -0.15 0 0 0</pose>
+        <geometry><box><size>2.30 0.06 0.06</size></box></geometry>
+        <material><ambient>0.30 0.28 0.25 1</ambient><diffuse>0.55 0.51 0.46 1</diffuse></material>
+      </visual>
+      <visual name="rocker_r">
+        <pose>0 -0.95 -0.15 0 0 0</pose>
+        <geometry><box><size>2.30 0.06 0.06</size></box></geometry>
+        <material><ambient>0.30 0.28 0.25 1</ambient><diffuse>0.55 0.51 0.46 1</diffuse></material>
+      </visual>
     </link>
 
-    <!-- Rocker-bogie suspension: 6 wheels, 3 per side.
-         Wheel d=0.525 m, w=0.20 m. Centres at z=0.26 (on flat
-         ground), track ±1.20 m, x = +1.10 / 0 / -1.10. -->
+    <!-- ===== Six wheel links. Each wheel's link frame is upright;
+         the cylinder's visual + collision are rotated inside the
+         link so the cylinder lies flat. The joint's axis points
+         along world Y, matching the wheel's intended spin axis. ===== -->
+
+    <!-- Reusable wheel material is inlined per-link below. Mass: 30 kg
+         per wheel; inertia for cylinder r=0.26, h=0.20:
+           Ixx = Iyy = (1/12)*m*(3r^2+h^2) ~= 1.6
+           Izz = (1/2)*m*r^2 ~= 1.0  (= rolling axis after rotation)
+         We rotate the cylinder, so the rolling moment of inertia
+         lines up with the joint axis. -->
+
     <link name="wheel_fl">
-      <pose>1.10 1.20 0.26 1.5708 0 0</pose>
-      <visual name="v"><geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
-        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material></visual>
+      <pose>1.10 1.20 0.26 0 0 0</pose>
+      <inertial><mass>30</mass>
+        <inertia><ixx>1.6</ixx><iyy>1.0</iyy><izz>1.6</izz></inertia>
+      </inertial>
+      <collision name="c"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+      </collision>
+      <visual name="v"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
     </link>
     <link name="wheel_ml">
-      <pose>0.00 1.20 0.26 1.5708 0 0</pose>
-      <visual name="v"><geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
-        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material></visual>
+      <pose>0.00 1.20 0.26 0 0 0</pose>
+      <inertial><mass>30</mass>
+        <inertia><ixx>1.6</ixx><iyy>1.0</iyy><izz>1.6</izz></inertia>
+      </inertial>
+      <collision name="c"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+      </collision>
+      <visual name="v"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
     </link>
     <link name="wheel_rl">
-      <pose>-1.10 1.20 0.26 1.5708 0 0</pose>
-      <visual name="v"><geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
-        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material></visual>
+      <pose>-1.10 1.20 0.26 0 0 0</pose>
+      <inertial><mass>30</mass>
+        <inertia><ixx>1.6</ixx><iyy>1.0</iyy><izz>1.6</izz></inertia>
+      </inertial>
+      <collision name="c"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+      </collision>
+      <visual name="v"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
     </link>
     <link name="wheel_fr">
-      <pose>1.10 -1.20 0.26 1.5708 0 0</pose>
-      <visual name="v"><geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
-        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material></visual>
+      <pose>1.10 -1.20 0.26 0 0 0</pose>
+      <inertial><mass>30</mass>
+        <inertia><ixx>1.6</ixx><iyy>1.0</iyy><izz>1.6</izz></inertia>
+      </inertial>
+      <collision name="c"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+      </collision>
+      <visual name="v"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
     </link>
     <link name="wheel_mr">
-      <pose>0.00 -1.20 0.26 1.5708 0 0</pose>
-      <visual name="v"><geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
-        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material></visual>
+      <pose>0.00 -1.20 0.26 0 0 0</pose>
+      <inertial><mass>30</mass>
+        <inertia><ixx>1.6</ixx><iyy>1.0</iyy><izz>1.6</izz></inertia>
+      </inertial>
+      <collision name="c"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+      </collision>
+      <visual name="v"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
     </link>
     <link name="wheel_rr">
-      <pose>-1.10 -1.20 0.26 1.5708 0 0</pose>
-      <visual name="v"><geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
-        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material></visual>
+      <pose>-1.10 -1.20 0.26 0 0 0</pose>
+      <inertial><mass>30</mass>
+        <inertia><ixx>1.6</ixx><iyy>1.0</iyy><izz>1.6</izz></inertia>
+      </inertial>
+      <collision name="c"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+      </collision>
+      <visual name="v"><pose>0 0 0 1.5708 0 0</pose>
+        <geometry><cylinder><radius>0.26</radius><length>0.20</length></cylinder></geometry>
+        <material><ambient>0.06 0.06 0.06 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
     </link>
 
-    <!-- Rocker arms (visual only) -->
-    <link name="rocker_l">
-      <pose>0 0.95 0.50 0 0 0</pose>
-      <visual name="v">
-        <geometry><box><size>2.30 0.06 0.06</size></box></geometry>
-        <material><ambient>0.30 0.28 0.25 1</ambient><diffuse>0.55 0.51 0.46 1</diffuse></material>
-      </visual>
-    </link>
-    <link name="rocker_r">
-      <pose>0 -0.95 0.50 0 0 0</pose>
-      <visual name="v">
-        <geometry><box><size>2.30 0.06 0.06</size></box></geometry>
-        <material><ambient>0.30 0.28 0.25 1</ambient><diffuse>0.55 0.51 0.46 1</diffuse></material>
-      </visual>
-    </link>
+    <!-- ===== Six revolute joints. Axis 0,1,0 in the child link
+         frame is the wheel's spin axis (along world Y). ===== -->
+    <joint name="wheel_fl_joint" type="revolute">
+      <parent>body</parent><child>wheel_fl</child>
+      <axis><xyz>0 1 0</xyz></axis>
+    </joint>
+    <joint name="wheel_ml_joint" type="revolute">
+      <parent>body</parent><child>wheel_ml</child>
+      <axis><xyz>0 1 0</xyz></axis>
+    </joint>
+    <joint name="wheel_rl_joint" type="revolute">
+      <parent>body</parent><child>wheel_rl</child>
+      <axis><xyz>0 1 0</xyz></axis>
+    </joint>
+    <joint name="wheel_fr_joint" type="revolute">
+      <parent>body</parent><child>wheel_fr</child>
+      <axis><xyz>0 1 0</xyz></axis>
+    </joint>
+    <joint name="wheel_mr_joint" type="revolute">
+      <parent>body</parent><child>wheel_mr</child>
+      <axis><xyz>0 1 0</xyz></axis>
+    </joint>
+    <joint name="wheel_rr_joint" type="revolute">
+      <parent>body</parent><child>wheel_rr</child>
+      <axis><xyz>0 1 0</xyz></axis>
+    </joint>
+
+    <!-- ===== DiffDrive: groups all 3 left + all 3 right wheels.
+         Topic /model/perseverance/cmd_vel; the entrypoint bridges
+         that to ROS 2 /cmd_vel for moon.sdf. ===== -->
+    <plugin filename="ignition-gazebo-diff-drive-system"
+            name="ignition::gazebo::systems::DiffDrive">
+      <left_joint>wheel_fl_joint</left_joint>
+      <left_joint>wheel_ml_joint</left_joint>
+      <left_joint>wheel_rl_joint</left_joint>
+      <right_joint>wheel_fr_joint</right_joint>
+      <right_joint>wheel_mr_joint</right_joint>
+      <right_joint>wheel_rr_joint</right_joint>
+      <wheel_separation>2.40</wheel_separation>
+      <wheel_radius>0.26</wheel_radius>
+      <topic>/model/perseverance/cmd_vel</topic>
+      <odom_publish_frequency>20</odom_publish_frequency>
+      <frame_id>perseverance/odom</frame_id>
+      <child_frame_id>perseverance/base_link</child_frame_id>
+      <max_linear_acceleration>2</max_linear_acceleration>
+      <max_angular_acceleration>3</max_angular_acceleration>
+    </plugin>
   </model>
 </sdf>

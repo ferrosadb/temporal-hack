@@ -229,6 +229,39 @@ sim-gui: ## Open the Gazebo GUI in the default browser
 	 (command -v xdg-open >/dev/null && xdg-open "$$URL") || \
 	 echo "Open it manually."
 
+# Drive helpers for the perseverance rover in the moon world. These
+# publish straight to the in-container Ignition topic (no ROS install
+# on the host required). Override LX / AZ to vary speed.
+LX ?= 0.5
+AZ ?= 0.0
+SIM_CONTAINER ?= temporal-hack-lab-sim-1
+GZ_DRIVE_TOPIC ?= /model/perseverance/cmd_vel
+
+.PHONY: sim-drive-fwd
+sim-drive-fwd: ## Drive the rover forward (LX m/s, override LX=)
+	@$(CONTAINER_ENGINE) exec $(SIM_CONTAINER) bash -c \
+	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "linear: {x: $(LX)}"'
+
+.PHONY: sim-drive-back
+sim-drive-back: ## Drive the rover backward
+	@$(CONTAINER_ENGINE) exec $(SIM_CONTAINER) bash -c \
+	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "linear: {x: -$(LX)}"'
+
+.PHONY: sim-drive-left
+sim-drive-left: ## Spin in place, left
+	@$(CONTAINER_ENGINE) exec $(SIM_CONTAINER) bash -c \
+	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "angular: {z: 0.5}"'
+
+.PHONY: sim-drive-right
+sim-drive-right: ## Spin in place, right
+	@$(CONTAINER_ENGINE) exec $(SIM_CONTAINER) bash -c \
+	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "angular: {z: -0.5}"'
+
+.PHONY: sim-drive-stop
+sim-drive-stop: ## Stop the rover
+	@$(CONTAINER_ENGINE) exec $(SIM_CONTAINER) bash -c \
+	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "linear: {x: 0}, angular: {z: 0}"'
+
 # =============================================================================
 # CI cluster (smoke / pre-push parity) — alternate ports so it can run
 # alongside `make lab-up` on the same host. Used by .git-hooks/installer-smoke.sh
