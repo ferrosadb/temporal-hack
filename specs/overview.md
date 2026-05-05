@@ -70,15 +70,16 @@ flowchart TB
     Cr --o RobotApp
 
     Agent <-->|gRPC| RobotInfra
-    Agent <-->|MQTT QoS 1<br/>persistent sessions| Mq
+    Agent <-->|MQTT QoS 1| Mq
     Agent ==>|shells| Eng
     Eng ==>|pull / run / rename| RobotApp
 
-    Gz <-->|ROS DDS<br/>domain 42| RobotInfra
-    Gz <-->|ROS /cmd_vel<br/>via ros_gz_bridge| RobotApp
+    Gz <-->|ROS DDS domain 42| RobotInfra
+    Gz <-->|ROS /cmd_vel via ros_gz_bridge| RobotApp
 
+    %% Edges 11 and 12 are the agent->engine->robot-app OTA path.
+    linkStyle 11 stroke:#d79b00,stroke-width:2px
     linkStyle 12 stroke:#d79b00,stroke-width:2px
-    linkStyle 13 stroke:#d79b00,stroke-width:2px
 ```
 
 In production the gazebo container is absent (real robots, real
@@ -131,8 +132,8 @@ shells out to the host's container engine.
 ```mermaid
 sequenceDiagram
     participant Nodes as ROS 2 nodes
-    participant Bridge as bridge_node (rclpy)
-    participant Agent as agent (Go)
+    participant Bridge as bridge_node
+    participant Agent as agent
     participant Buf as local SQLite buffer
     participant MQ as MQTT broker
     participant Ing as telemetry-ingest
@@ -161,31 +162,31 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Op as operator
+    actor Op as Operator
     participant Cp as control plane
     participant Tmp as Temporal
     participant Ow as ota-worker
     participant MQ as MQTT
     participant Ag as agent
-    participant Eng as host docker/podman
+    participant Eng as host engine
     participant App as robot-app
 
     Op->>Cp: POST /v1/ota/rollouts
     Cp->>Tmp: StartWorkflow OTARollout
     Tmp->>Ow: dispatch task
-    loop per cohort phase (canary → 25% → rest)
+    loop per cohort phase canary then 25% then rest
         Ow->>MQ: publish cmd/{robot_id}/ota
         MQ->>Ag: deliver
         Ag->>Eng: pull image_ref from registry
         Ag->>MQ: ack PHASE_PULLED
-        Ag->>Eng: run new (temp name) → verify → rm old → rename
+        Ag->>Eng: run new under temp name then verify then rm old then rename
         Ag->>MQ: ack PHASE_SWAPPED
         Eng->>App: container starts
         Ag->>Eng: exec smoke_command
         Ag->>MQ: ack PHASE_HEALTHY
         MQ->>Ow: signal workflow per phase
     end
-    Ow->>Tmp: RecordRolloutEnded(status)
+    Ow->>Tmp: RecordRolloutEnded
 ```
 
 **Properties:**
@@ -206,7 +207,7 @@ own a recovery sequence in response to a robot-side event.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Sim as gazebo (contact sensor)
+    participant Sim as gazebo
     participant RGB as ros_gz_bridge
     participant Pub as collision_publisher
     participant MQ as MQTT
@@ -217,17 +218,17 @@ sequenceDiagram
 
     Sim->>RGB: ignition.msgs.Contacts
     RGB->>Pub: ROS /contacts
-    Pub->>Pub: filter ground contacts<br/>+ 2s debounce
+    Pub->>Pub: filter ground contacts then 2s debounce
     Pub->>MQ: events/{id}/collision
     MQ->>Cw: deliver
     Cw->>Tmp: StartWorkflow CollisionResponse
-    loop each phase: back / settle / turn / forward / stop
+    loop each phase back, settle, turn, forward, stop
         Tmp->>Cw: dispatch SendTwist activity
-        Cw->>MQ: cmd/{id}/twist @ 10 Hz QoS 0
+        Cw->>MQ: cmd/{id}/twist at 10 Hz QoS 0
         MQ->>Sub: deliver
-        Sub->>Drive: ROS /cmd_vel → gz cmd_vel
+        Sub->>Drive: ROS /cmd_vel forwards to gz cmd_vel
     end
-    Cw->>MQ: cmd/{id}/twist {0,0} QoS 1 (final stop)
+    Cw->>MQ: cmd/{id}/twist 0,0 QoS 1 final stop
     Cw->>Tmp: workflow Completed
 ```
 

@@ -94,14 +94,14 @@ container in place.
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Op as operator (curl / make ota-*)
+    actor Op as Operator
     participant Cp as controlplane
     participant Ow as ota-worker
     participant Tmp as Temporal
-    participant MQ as MQTT (EMQX)
-    participant Ag as agent (host)
-    participant Eng as docker/podman (host)
-    participant App as robot-app (container)
+    participant MQ as MQTT
+    participant Ag as agent
+    participant Eng as host engine
+    participant App as robot-app
 
     Op->>Cp: POST /v1/ota/rollouts
     Cp->>Tmp: StartWorkflow OTARollout
@@ -110,15 +110,15 @@ sequenceDiagram
     MQ-->>Ag: deliver
     Ag->>Eng: pull image_ref
     Ag->>MQ: ack PHASE_PULLED
-    Ag->>Eng: run new (temp name)
-    Ag->>Eng: rm old; rename new
+    Ag->>Eng: run new under temp name
+    Ag->>Eng: rm old then rename new
     Ag->>MQ: ack PHASE_SWAPPED
     Eng->>App: container starts
     Ag->>Eng: exec smoke_command
     Ag->>MQ: ack PHASE_HEALTHY
     MQ-->>Ow: signal workflow per phase
-    Ow->>Tmp: RecordRolloutEnded(completed)
-    Cp-->>Op: GET /v1/ota/rollouts → completed
+    Ow->>Tmp: RecordRolloutEnded
+    Cp-->>Op: GET /v1/ota/rollouts shows completed
 ```
 
 ### Collision flow
@@ -126,27 +126,27 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Gz as gazebo (contact sensor)
+    participant Gz as gazebo
     participant RGB as ros_gz_bridge
-    participant Cp as collision_publisher (robot)
-    participant MQ as MQTT (EMQX)
+    participant Pub as collision_publisher
+    participant MQ as MQTT
     participant Cw as collision-worker
     participant Tmp as Temporal
-    participant Ts as twist_subscriber (robot)
+    participant Sub as twist_subscriber
     participant Rover as gz DiffDrive
 
     Gz->>RGB: ignition.msgs.Contacts
-    RGB->>Cp: ROS /contacts
-    Cp->>MQ: events/{id}/collision (debounced)
+    RGB->>Pub: ROS /contacts
+    Pub->>MQ: events/{id}/collision after 2s debounce
     MQ-->>Cw: deliver
     Cw->>Tmp: StartWorkflow CollisionResponse
-    Tmp-->>Cw: dispatch SendTwist (back, 3s)
-    loop each phase: back / settle / turn / forward / stop
-        Cw->>MQ: cmd/{id}/twist @ 10 Hz QoS 0
-        MQ-->>Ts: deliver
-        Ts->>Rover: ROS /cmd_vel → gz cmd_vel
+    Tmp-->>Cw: dispatch SendTwist back 3s
+    loop each phase back, settle, turn, forward, stop
+        Cw->>MQ: cmd/{id}/twist at 10 Hz QoS 0
+        MQ-->>Sub: deliver
+        Sub->>Rover: ROS /cmd_vel forwards to gz cmd_vel
     end
-    Cw->>MQ: cmd/{id}/twist {0,0} QoS 1 (final stop)
+    Cw->>MQ: cmd/{id}/twist 0,0 QoS 1 final stop
     Cw->>Tmp: workflow Completed
 ```
 
