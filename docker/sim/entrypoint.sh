@@ -71,6 +71,21 @@ else
     echo
 fi
 
+# ROS 2 ↔ Ignition bridge so external ROS 2 controllers can drive the
+# robot. The diff_drive demo's vehicle_blue subscribes to the Ignition
+# topic /model/vehicle_blue/cmd_vel; we ROS-side-remap that to plain
+# /cmd_vel, which is the ROS 2 convention robot-app controllers
+# publish on. /odom is bridged the other way for telemetry.
+sleep 4
+echo "[sim] starting ros_gz_bridge: ROS 2 /cmd_vel ↔ ign /model/vehicle_blue/cmd_vel"
+ros2 run ros_gz_bridge parameter_bridge \
+    /model/vehicle_blue/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist \
+    /model/vehicle_blue/odometry@nav_msgs/msg/Odometry@ignition.msgs.Odometry \
+    --ros-args \
+    -r /model/vehicle_blue/cmd_vel:=/cmd_vel \
+    -r /model/vehicle_blue/odometry:=/odom &
+PIDS+=($!)
+
 # Synthetic battery (TurtleBot3 sim doesn't emit /battery_state).
 sleep 6
 python3 -m bridge_node.sim_battery &
