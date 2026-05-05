@@ -190,9 +190,10 @@ lab-reset: container-check ## Wipe lab state and restart
 	cd installer/docker-compose && $(COMPOSE) -p $(LAB_PROJECT) down -v
 	$(MAKE) lab-up
 
-# =============================================================================
-# Sim overlay — Gazebo + bridge + agent on top of the lab cluster
-# =============================================================================
+.PHONY: dummy-robot-image
+dummy-robot-image: container-check ## Build and push lab OTA placeholder (Alpine, PID 1 sleeps forever)
+	$(CONTAINER_ENGINE) build -t localhost:5001/robot-app:v1 -f docker/dummy-robot/Dockerfile docker/dummy-robot
+	$(CONTAINER_ENGINE) push localhost:5001/robot-app:v1
 
 .PHONY: sim-up
 sim-up: container-check ## Bring up the lab stack + a Gazebo robot sim (GUI on :14680) + agent
