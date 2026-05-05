@@ -16,12 +16,12 @@ import (
 // The container we manage is named "robot-app" by convention. v1
 // runs only one application container per robot.
 type DockerCLI struct {
-	ContainerName string // default "robot-app"
-	RunArgs       []string // extra args passed at `docker run` (volumes, devices, etc.)
+	ContainerName string   // default "robot-app"
+	RunArgs       []string // extra args passed at `docker run` (volumes, devices, network, env, etc.)
 }
 
-func NewDockerCLI() *DockerCLI {
-	return &DockerCLI{ContainerName: "robot-app"}
+func NewDockerCLI(runArgs []string) *DockerCLI {
+	return &DockerCLI{ContainerName: "robot-app", RunArgs: runArgs}
 }
 
 // Pull invokes `docker pull <ref>`.
