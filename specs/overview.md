@@ -24,38 +24,66 @@ phase artifacts (DSM, threat model, FMEA, project plan).
 
 ## System context
 
+The cloud / robot split as of the demo cut. Production
+("customer DC") and dev-loop sim ("local Mac") share the same
+component shape — only the substrate (Kubernetes vs `make sim-up`)
+and the simulator role differ.
+
 ```mermaid
-graph LR
-    subgraph customer_dc[Customer Data Center]
-        cp[Control Plane<br/>Go services]
-        tc[Temporal Cluster<br/>self-hosted]
-        mq[MQTT Broker<br/>EMQX or VerneMQ]
-        cr[Container Registry<br/>OCI images]
-        ts[Telemetry Store<br/>TSDB]
-        pg[(Postgres)]
+flowchart TB
+    classDef cloud fill:#dae8fc,stroke:#6c8ebf,color:#000
+    classDef host  fill:#e8f0ff,stroke:#5277b8,color:#000
+    classDef cont  fill:#f4ecd8,stroke:#a98246,color:#000
+    classDef ota   fill:#ffe6cc,stroke:#d79b00,color:#000
+
+    Op([operator])
+
+    subgraph CloudDC["customer DC (or local lab cluster)"]
+        direction TB
+        Cp["control plane<br/>Go HTTP API"]:::cloud
+        Tc[("Temporal cluster<br/>+ Postgres")]:::cloud
+        Mq[("MQTT broker<br/>EMQX, persistent sessions")]:::cloud
+        Cr[("Container registry<br/>OCI images")]:::cloud
+        Ts[("Telemetry store<br/>TimescaleDB hypertable")]:::cloud
+        Tlm["telemetry-ingest<br/>(MQTT → TSDB)"]:::cloud
+        Otaw["ota-worker<br/>Temporal + MQTT bridge"]:::cloud
+        Colw["collision-worker<br/>Temporal + MQTT bridge"]:::cloud
     end
 
-    subgraph robots[Robot Fleet 10–100 units]
-        ag[Robot Agent Go]
-        br[ROS 2 Bridge<br/>Python or C++]
-        au[Customer Autonomy<br/>ROS 2 nodes]
+    subgraph Robot["robot (or local sim host)"]
+        direction TB
+        Gz["gazebo container<br/>ign gazebo + ros_gz_bridge<br/>(local sim only)"]:::cont
+        RobotInfra["robot container<br/>bridge_node (gRPC) +<br/>sim_battery + collision_publisher +<br/>twist_subscriber"]:::cont
+        RobotApp["robot-app container<br/>OTA-swappable controller<br/>(drive-circle, drive-figure-eight,<br/>customer apps...)"]:::ota
+        Agent["agent (Go)<br/>MQTT pub/sub +<br/>OTA executor"]:::host
+        Eng["docker / podman<br/>engine"]:::host
     end
 
-    dev[Developer Workstation<br/>Blender + Phobos + Gazebo]
+    Op -->|POST /v1/ota/rollouts| Cp
+    Cp -->|StartWorkflow| Tc
+    Tc <-->|workflow tasks| Otaw
+    Tc <-->|workflow tasks| Colw
+    Otaw <--> Mq
+    Colw <--> Mq
+    Tlm --> Ts
+    Tlm <--> Mq
+    Cr --o RobotApp
 
-    cp --> tc
-    cp --> mq
-    cp --> cr
-    cp --> ts
-    tc --> pg
+    Agent <-->|gRPC| RobotInfra
+    Agent <-->|MQTT QoS 1<br/>persistent sessions| Mq
+    Agent ==>|shells| Eng
+    Eng ==>|pull / run / rename| RobotApp
 
-    ag <-. MQTT QoS 1/2 .-> mq
-    ag --> br
-    br -. DDS .- au
+    Gz <-->|ROS DDS<br/>domain 42| RobotInfra
+    Gz <-->|ROS /cmd_vel<br/>via ros_gz_bridge| RobotApp
 
-    dev -. URDF .- au
-    dev -. dev iteration .- au
+    linkStyle 12 stroke:#d79b00,stroke-width:2px
+    linkStyle 13 stroke:#d79b00,stroke-width:2px
 ```
+
+In production the gazebo container is absent (real robots, real
+sensors). Everything else — agent, robot-container infra, MQTT path,
+the cloud workers — is identical between dev sim and production.
 
 ## Component inventory
 
@@ -73,11 +101,21 @@ graph LR
 
 ### Robot side (per Ubuntu 22.04 + Docker)
 
-| Component | Language | Responsibility |
-|-----------|----------|----------------|
-| Robot agent | Go | Maintain MQTT connection, buffer telemetry during disconnect, execute OTA updates, report health |
-| ROS 2 bridge node | Python or C++ (rclpy / rclcpp) | Subscribe to selected DDS topics, republish via gRPC over Unix socket |
-| Customer autonomy stack | C++ / Python (ROS 2 nodes) | Out of scope; customer's responsibility |
+The robot now runs **three** containers per host, not one. The
+agent is a sibling Go binary outside the compose lifecycle (in the
+dev demo it runs natively on the macOS host; in production it
+ships as a systemd unit).
+
+| Component | Language | Container? | Responsibility |
+|-----------|----------|-----------|----------------|
+| **gazebo** (sim only) | C++ / Python | container | ign gazebo + ros_gz_bridge + Xvfb / x11vnc / noVNC. Absent on a real robot. |
+| **robot** (always-on infra) | Python (rclpy) | container | bridge_node (rclpy → gRPC TCP :50051), sim_battery (sim only), collision_publisher (ROS /contacts → MQTT), twist_subscriber (MQTT → ROS /cmd_vel). |
+| **robot-app** (OTA target) | any (ROS 2 image) | container | The replaceable controller. drive-circle, drive-figure-eight in dev; customer autonomy code in production. The agent OTAs this image; everything else is static between releases. |
+| robot agent | Go | host binary | Maintain MQTT connection, buffer telemetry during disconnect, execute OTA updates via the host docker/podman CLI, report health. |
+
+The agent owns the path from MQTT command → host engine → robot-app.
+Workers in the cloud orchestrate via MQTT; only the agent ever
+shells out to the host's container engine.
 
 ### Developer toolchain
 
@@ -90,21 +128,24 @@ graph LR
 
 ### Telemetry path (robot → cloud)
 
-```
-ROS 2 nodes ─DDS topic─▶ ROS 2 bridge ─gRPC UDS─▶ Robot agent
-                                                       │
-                                              local SQLite buffer
-                                              (intermittent)
-                                                       │
-                                                   MQTT QoS 1/2
-                                                       │
-                                                       ▼
-                                                  MQTT broker
-                                                       │
-                                          subscriber: telemetry-ingest
-                                                       │
-                                                       ▼
-                                                  Telemetry store
+```mermaid
+sequenceDiagram
+    participant Nodes as ROS 2 nodes
+    participant Bridge as bridge_node (rclpy)
+    participant Agent as agent (Go)
+    participant Buf as local SQLite buffer
+    participant MQ as MQTT broker
+    participant Ing as telemetry-ingest
+    participant TS as TimescaleDB
+
+    Nodes->>Bridge: DDS topic
+    Bridge->>Agent: gRPC TCP :50051
+    Agent->>Buf: append (bounded ring)
+    Note over Agent,Buf: drains while connected
+    Buf->>Agent: pop
+    Agent->>MQ: publish QoS 1 (persistent session)
+    MQ->>Ing: deliver
+    Ing->>TS: INSERT into telemetry hypertable
 ```
 
 **Properties:**
@@ -117,32 +158,89 @@ ROS 2 nodes ─DDS topic─▶ ROS 2 bridge ─gRPC UDS─▶ Robot agent
 
 ### OTA path (cloud → robot)
 
-```
-Operator API ─▶ Control Plane ─▶ Temporal workflow (rollout)
-                                       │
-                          1) Resolve target image tag
-                          2) For each robot in cohort:
-                                a) Publish MQTT command (with QoS 1)
-                                b) Wait for ACK (timer-bounded)
-                                c) Wait for health check
-                                d) On failure → rollback child workflow
-                                e) Record outcome
-                                       │
-                                       ▼
-Robot agent ─▶ pull image from registry (over MQTT-signaled URL)
-            ─▶ swap container
-            ─▶ run smoke check
-            ─▶ ACK / NACK via MQTT
-            ─▶ on failure: revert to previous container, signal NACK
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Op as operator
+    participant Cp as control plane
+    participant Tmp as Temporal
+    participant Ow as ota-worker
+    participant MQ as MQTT
+    participant Ag as agent
+    participant Eng as host docker/podman
+    participant App as robot-app
+
+    Op->>Cp: POST /v1/ota/rollouts
+    Cp->>Tmp: StartWorkflow OTARollout
+    Tmp->>Ow: dispatch task
+    loop per cohort phase (canary → 25% → rest)
+        Ow->>MQ: publish cmd/{robot_id}/ota
+        MQ->>Ag: deliver
+        Ag->>Eng: pull image_ref from registry
+        Ag->>MQ: ack PHASE_PULLED
+        Ag->>Eng: run new (temp name) → verify → rm old → rename
+        Ag->>MQ: ack PHASE_SWAPPED
+        Eng->>App: container starts
+        Ag->>Eng: exec smoke_command
+        Ag->>MQ: ack PHASE_HEALTHY
+        MQ->>Ow: signal workflow per phase
+    end
+    Ow->>Tmp: RecordRolloutEnded(status)
 ```
 
 **Properties:**
 - Rollout cohort policy (canary, batched, full-fleet) lives in the
   Temporal workflow definition.
-- Rollback is a child workflow with its own retry semantics.
+- Rollback is a child workflow with its own retry semantics; the
+  agent always emits PHASE_ROLLED_BACK so the rollback workflow
+  terminates instead of timing out.
 - Image signature verification is an mTLS-shaped seam (see D-11):
   v1 uses TLS to the registry only; production gates require signed
   images verified by a customer-controlled key.
+
+### Collision-response path (robot → cloud → robot)
+
+This is the demo wiring used to show that a Temporal workflow can
+own a recovery sequence in response to a robot-side event.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Sim as gazebo (contact sensor)
+    participant RGB as ros_gz_bridge
+    participant Pub as collision_publisher
+    participant MQ as MQTT
+    participant Cw as collision-worker
+    participant Tmp as Temporal
+    participant Sub as twist_subscriber
+    participant Drive as gz DiffDrive
+
+    Sim->>RGB: ignition.msgs.Contacts
+    RGB->>Pub: ROS /contacts
+    Pub->>Pub: filter ground contacts<br/>+ 2s debounce
+    Pub->>MQ: events/{id}/collision
+    MQ->>Cw: deliver
+    Cw->>Tmp: StartWorkflow CollisionResponse
+    loop each phase: back / settle / turn / forward / stop
+        Tmp->>Cw: dispatch SendTwist activity
+        Cw->>MQ: cmd/{id}/twist @ 10 Hz QoS 0
+        MQ->>Sub: deliver
+        Sub->>Drive: ROS /cmd_vel → gz cmd_vel
+    end
+    Cw->>MQ: cmd/{id}/twist {0,0} QoS 1 (final stop)
+    Cw->>Tmp: workflow Completed
+```
+
+**Properties:**
+- Twist commands ride MQTT QoS 0 at 10 Hz; the final stop frame is
+  QoS 1 so the rover always settles even if a tail QoS 0 packet
+  drops.
+- Workers run with `clean_session=true`. A missed collision event
+  is fine (the next contact emits another); persistent-session
+  replay floods the bridge after restart.
+- The collision_publisher filters out ground-plane contacts so the
+  rover's resting weight doesn't trigger a workflow on every sim
+  tick.
 
 ## Constraints (carried forward from Phase 0)
 
@@ -162,19 +260,18 @@ Robot agent ─▶ pull image from registry (over MQTT-signaled URL)
 6. v1 scope is Telemetry + OTA. Mission dispatch and teleop are
    non-goals (D-02).
 
-## Open architecture decisions (ADR placeholders)
+## Closed architectural decisions (ADRs)
 
-To be resolved in Phase 2:
-
-| ADR | Topic | Constraint |
-|-----|-------|------------|
-| ADR-001 | MQTT broker selection | EMQX vs VerneMQ vs Mosquitto cluster; persistent session capacity, HA model |
-| ADR-002 | Container registry | Harbor / Distribution / Zot; signing / verification path |
-| ADR-003 | Telemetry storage | TimescaleDB vs VictoriaMetrics vs Prometheus + Mimir; retention / cardinality |
-| ADR-004 | Bridge node language | Python (rclpy, faster delivery) vs C++ (rclcpp, more efficient) |
-| ADR-005 | Installer toolchain | Helm-on-k3s vs Ansible vs custom |
-| ADR-006 | Local-buffer durability format on robot | SQLite vs filesystem queue vs embedded NATS |
-| ADR-007 | OTA artifact swap mechanism | Recreate vs blue-green container; health check definition |
+| ADR | Decision | Status |
+|-----|----------|--------|
+| ADR-001 | MQTT broker = EMQX 5.x (lab) | accepted; see `specs/adr/ADR-001-mqtt-broker.md` |
+| ADR-002 | Container registry = Distribution (`registry:2`) | accepted |
+| ADR-003 | Telemetry storage = TimescaleDB hypertable | accepted |
+| ADR-004 | Bridge node = Python rclpy | accepted |
+| ADR-005 | Installer toolchain | open (Sprint 8) |
+| ADR-006 | Local-buffer durability format on robot = SQLite (WAL) | accepted (in code) |
+| ADR-007 | OTA artifact swap mechanism = blue-green | accepted; see `specs/adr/ADR-007-ota-swap-strategy.md` |
+| ADR-008 | OTA command/ack transport = MQTT topic pair | accepted; see `specs/adr/ADR-008-ota-command-transport.md` |
 
 ## Risks (from Phase 0)
 
@@ -196,7 +293,10 @@ See `decisions.md` for the full risk register. Highest-impact items:
 
 ## Phase 1 status
 
-This overview is the Phase 1 deliverable. Next phase (DSM) analyzes
-module boundaries between the Go cloud control plane, the Go robot
-agent, and the bridge node — looking for premature coupling and the
-right place to draw the gRPC contract between agent and bridge.
+This overview is the Phase 1 deliverable, refreshed after the demo
+cut (gazebo+robot container split, OTA-swappable robot-app images,
+CollisionResponse workflow). Next phase (DSM) analyzes module
+boundaries between the Go cloud workers, the agent, and the
+robot-side ROS code — looking for premature coupling and the right
+place to draw the contracts (gRPC between agent and bridge_node;
+MQTT topic schemas between agent and workers).
