@@ -29,39 +29,134 @@ ops/          runbooks
 
 ## Service shape
 
+The runtime splits across **three containers** + **four host-side
+processes**. The agent owns the OTA path: it shells out to the host
+docker/podman CLI to pull, run, swap, and roll back the
+**robot-app** container — which runs alongside the others on the lab
+network and joins the same ROS DDS domain.
+
 ```
-                 ┌────────────────── browser ──────────────────┐
-                 │  http://localhost:14680  Gazebo GUI (noVNC) │
-                 └──────────────────┬──────────────────────────┘
-                                    │
-            ┌───────────────────────▼───────────────────────┐
-            │ gazebo container                              │
-            │   • ign gazebo + ros_gz_bridge                │
-            │   • Xvfb + x11vnc + noVNC                     │
-            └────┬─────────────────────┬────────────────────┘
-                 │ ROS DDS (domain 42) │
-       ┌─────────▼──────────┐  ┌───────▼────────────────────┐
-       │ robot container    │  │ robot-app container        │
-       │ • bridge_node      │  │ (drive-circle | -fig-eight) │
-       │ • sim_battery      │  │ — OTA-swappable             │
-       │ • collision_pub    │  └────────────────────────────┘
-       │ • twist_subscriber │
-       └─────────┬──────────┘
-                 │ gRPC (TCP)
-       ┌─────────▼──────────────────────────┐
-       │ agent (Go, native macOS binary)    │
-       │ • MQTT pub/sub on lab broker       │
-       │ • OTA executor (docker/podman CLI) │
-       └─────────┬──────────────────────────┘
-                 │
-       ┌─────────▼──────────┐    ┌───────────────────────┐
-       │ MQTT (lab :14883)  │◀──▶│ ota-worker            │
-       │                    │    │ collision-worker      │
-       │                    │    │ Temporal :14733       │
-       └────────────────────┘    └───────────────────────┘
+   ─── browser ──────────────────────────────────────────────────────
+        http://localhost:14680   Gazebo GUI (noVNC)        :14080  Temporal UI
+   ──────────┬────────────────────────────────────────────────┬─────
+             │                                                │
+   ┌─────────▼────────────────────┐         ┌─────────────────▼────────┐
+   │ gazebo container             │         │ Temporal cluster (lab)   │
+   │  • ign gazebo                │         │  :14733 frontend         │
+   │  • ros_gz_bridge             │         │  Postgres :14432         │
+   │  • Xvfb + x11vnc + noVNC     │         │  EMQX MQTT :14883        │
+   └────┬─────────────────────────┘         │  Registry :14050         │
+        │ ROS DDS (domain 42, cyclonedds)   └────┬───────────┬─────────┘
+        │                                        │ gRPC      │ MQTT
+   ┌────▼─────────────────────┐  ┌────────────┐  │           │
+   │ robot container          │  │ robot-app  │  │           │
+   │ (always-on infra)        │  │ container  │  │           │
+   │  • bridge_node (gRPC)    │  │  drive-    │  │           │
+   │  • sim_battery           │  │  circle |  │  │           │
+   │  • collision_publisher   │  │  drive-    │  │           │
+   │  • twist_subscriber      │  │  fig-eight │  │           │
+   └────┬─────────────────────┘  └─────▲──────┘  │           │
+        │ gRPC (robot:50051)           │         │           │
+        │ tunneled to host :50051      │ podman pull/run/swap│
+        │                              │                     │
+   ┌────▼──────────────────────────────┴──────────────────┐  │
+   │ host-side Go binaries (managed by `make`)            │  │
+   │  agent           — ROS bridge ↔ MQTT, OTA executor   │◀─┤
+   │  ota-worker      — Temporal worker + MQTT bridge     │◀─┤
+   │  collision-worker— Temporal worker + MQTT bridge     │◀─┘
+   │  controlplane    — HTTP API on :8081 (POST rollouts) │
+   └──────────────────────────────────────────────────────┘
+                    │
+                    │ docker / podman CLI on the macOS host
+                    ▼
+            ┌────────────────────────┐
+            │ podman engine on host  │
+            │  manages robot-app     │
+            │  container in the lab  │
+            │  network               │
+            └────────────────────────┘
 ```
 
-## Lab quickstart
+Two flows worth tracing:
+
+**OTA rollout.** Operator → `controlplane` POST `/v1/ota/rollouts` →
+`ota-worker` starts an `OTARollout` Temporal workflow → publishes
+`cmd/{robot_id}/ota` on MQTT → `agent` receives, shells out to the
+**host's** podman/docker CLI → `pull localhost:14050/robot-app:tag`
+→ blue-green swap (run new under temp name → verify → rm old →
+rename) → publishes per-phase ACKs back to `ack/{robot_id}/ota` →
+MQTT bridge translates each ACK to a Temporal signal on the
+deterministic workflow ID → workflow proceeds canary → 25% → rest
+→ records terminal status in Postgres.
+
+**Collision response.** Gazebo contact sensor fires →
+`ros_gz_bridge` publishes `/contacts` over ROS DDS →
+`collision_publisher` (in robot container) emits one MQTT event on
+`events/{robot_id}/collision` → `collision-worker` MQTT bridge
+starts a `CollisionResponse` Temporal workflow → workflow runs back
+up → 90° turn-right → forward → stop, each phase a `SendTwist`
+activity that publishes `cmd/{robot_id}/twist` at 10 Hz on MQTT →
+`twist_subscriber` (robot container) republishes onto ROS
+`/cmd_vel` → `ros_gz_bridge` forwards to gz `DiffDrive` plugin →
+rover moves.
+
+## Make-target interaction map
+
+Targets fall in five lanes. The four bring-up targets in the
+**baseline** lane are the ones you run; everything else
+either depends on those or operates on them.
+
+```
+  baseline
+  (run these in any                                    DEMO TRIGGERS
+  order; each is idempotent)                           (need baseline up)
+  ─────────────────────────                            ─────────────────
+                                                                        
+  ┌─sim-up──────────────────┐                          ┌─ota-circle────┐
+  │ podman compose up:       ├─────owns containers──▶ │  build  push  │
+  │   gazebo robot lab       │     (gazebo, robot,     │  POST /v1/ota │
+  │   cluster                │      lab cluster)       │  /rollouts    │
+  └──────────────┬───────────┘                         └──────┬────────┘
+                 │ publishes ports 14050                      │
+                 │ 14080 14432 14680 14733 14883 14900 50051  │
+                 ▼                                            │
+  ┌─agent-up─────────────────┐                                │
+  │ ./bin/agent &            │◀── shells host docker/podman ──┘
+  │   BROKER_URL=…14883      │    on POST → pull, run, swap robot-app
+  │   BRIDGE_ADDR=…50051     │
+  │   .run/agent.pid         │                         ┌─ota-figure-
+  └──────────────────────────┘                         │  eight ──────┐
+                                                       │  same shape  │
+  ┌─workers-up───────────────┐                         └──────────────┘
+  │ ./bin/ota-worker         │
+  │ ./bin/collision-worker   │                         ┌─collide──────┐
+  │   TEMPORAL_ADDR=…14733   │◀── start workflow ──────│  publish     │
+  │   BROKER_URL=…14883      │    on inbound MQTT      │  events/…    │
+  │   .run/{ota,collision}-  │    event                │  /collision  │
+  │     worker.pid           │                         └──────────────┘
+  └──────────────────────────┘
+                                                       ┌─ota-status───┐
+  ┌─controlplane-up──────────┐                         │  GET /v1/ota │
+  │ ./bin/controlplane :8081 │◀── HTTP from ───────────│  /rollouts   │
+  │   .run/controlplane.pid  │    ota-circle / curl    └──────────────┘
+  └──────────────────────────┘
+
+  TEAR-DOWN                            RESET (everything)
+  ─────────                            ─────────
+  *-down for each lane                 demo-reset       wipe + restart
+  controlplane-down                    demo-reset NOUP=1  wipe and stop
+  workers-down                                            
+  agent-down                           DRIVE (manual, no Temporal)
+  sim-down                             sim-drive-fwd LX= /-back/-left/-right/-stop
+
+  STATUS                               OBSERVABILITY
+  ─────────                            ─────────
+  *-status for each lane               sim-gui          open noVNC
+  ota-status                           sim-logs         tail sim+robot+agent
+                                       lab-status       probe lab ports
+```
+
+### Quickstart
 
 Requires Go 1.22+, Python 3.10+, and either Docker or Podman with
 compose. The Makefile auto-detects the container engine.
@@ -78,6 +173,8 @@ That's the whole baseline. Tear down:
 
 ```bash
 make controlplane-down && make workers-down && make agent-down && make sim-down
+# OR, full wipe + restart in one shot:
+make demo-reset
 ```
 
 ## Drive demo (no Temporal in the loop)
@@ -105,6 +202,39 @@ What you'll see: a `rollout-…` workflow appears at
 `http://localhost:14080/namespaces/default/workflows`, completes in
 1–2 seconds, and the `robot-app` container under `podman ps` flips to
 the new image. The rover's behaviour changes immediately.
+
+The full data path for a rollout:
+
+```
+make ota-circle
+   │
+   │ podman build  +  podman push  →  registry :14050
+   │                                     │
+   │ curl POST /v1/ota/rollouts          │
+   ▼                                     │
+controlplane (host) ──Temporal─▶ ota-worker (host)
+                                   │
+                                   │ MQTT publish on cmd/sim-robot-01/ota
+                                   ▼
+                                EMQX (lab :14883)
+                                   │
+                                   ▼
+                              agent (host) ─── shells ──┐
+                                   ▲                    │ podman pull / run / rename
+                                   │ MQTT ack on        │ on the macOS host
+                                   │ ack/sim-robot-01   │
+                                   │ /ota               ▼
+                                   │              robot-app (in lab network,
+                                   │              ROS_DOMAIN_ID=42 — joins the
+                                   │              gazebo+robot DDS partition)
+                                   ▼
+                              ota-worker reads acks, advances workflow phase
+                              (PHASE_PULLED → PHASE_SWAPPED → PHASE_HEALTHY),
+                              writes terminal status to Postgres.
+```
+
+Note the agent is the only thing that runs `podman pull/run/rename`.
+Workers never touch the host engine; they orchestrate via MQTT.
 
 ## Collision demo (Temporal drives the rover out of an obstacle)
 
