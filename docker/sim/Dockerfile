@@ -33,9 +33,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 # Bridge: copy the source from the repo (build context is repo root).
+# osrf/ros:humble-desktop ships pip 22.x. We install into the system
+# site-packages so rclpy stays importable from the bridge process
+# without PYTHONPATH gymnastics. Upgrade pip first to get the
+# --break-system-packages flag (PEP 668), then install.
 WORKDIR /opt/bridge
 COPY bridge/ /opt/bridge/
-RUN pip3 install --no-cache-dir --break-system-packages /opt/bridge
+RUN python3 -m pip install --no-cache-dir --upgrade "pip>=23.0" \
+ && python3 -m pip install --no-cache-dir --break-system-packages /opt/bridge
 
 # Sim launch script.
 COPY docker/sim/entrypoint.sh /entrypoint.sh
