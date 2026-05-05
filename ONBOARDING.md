@@ -295,31 +295,33 @@ same host.
 
 ## Section 7 — Run the platform end-to-end
 
-In four terminals:
+The host-side processes are managed by `make`. Four targets bring up
+the whole stack; each writes its PID to `.run/` and tails to a
+matching `.run/<name>.log`.
 
 ```bash
-# Terminal 1 — lab stack already up (Section 6)
-make lab-up
+# Terminal 1 — lab cluster + sim (one make target)
+make sim-up                        # gazebo + robot + Postgres + Temporal + MQTT + registry
 
-# Terminal 2 — telemetry ingester
-TSDB_DSN="postgres://temporal:temporal@localhost:5432/telemetry?sslmode=disable" \
-  ./bin/telemetry-ingest
-
-# Terminal 3 — control plane API
-./bin/controlplane
-
-# Terminal 4 — OTA worker (Temporal worker + MQTT bridge)
-./bin/ota-worker
-
-# Then start an agent (a fifth terminal, or detached)
-ROBOT_ID=lab-robot-01 ./bin/agent
+# Terminal 2 — three host-side runners (no foreground; check .run/*.log)
+make agent-up                      # native agent → talks to localhost:14883 / :50051
+make workers-up                    # ota-worker + collision-worker
+make controlplane-up               # OTA HTTP API on :8081
 ```
 
-Verify operator reads:
+Verify:
 
 ```bash
-curl -s http://localhost:8081/healthz
-curl -s http://localhost:8081/v1/robots | jq
+make agent-status workers-status controlplane-status
+curl -s http://localhost:8081/healthz                # 200
+curl -s http://localhost:8081/v1/robots | jq         # heartbeats from sim-robot-01
+make sim-gui                                          # Gazebo GUI in browser
+```
+
+Tear down (reverse order):
+
+```bash
+make controlplane-down && make workers-down && make agent-down && make sim-down
 ```
 
 ---
@@ -343,20 +345,56 @@ The Gazebo GUI is exposed over noVNC, so it works in any browser
 
 ---
 
-## Section 9 — Trigger a test OTA
+## Section 9 — Demos: OTA + Collision
 
-With the lab stack and worker up:
+Both demos assume Section 7's four targets are up.
+
+### OTA — swap a robot-app live (Temporal-orchestrated)
+
+One command per scenario. Builds the controller image, pushes it to
+the lab registry on `:14050`, and POSTs a rollout to the control
+plane:
 
 ```bash
-# Build and push the lab dummy robot image (Alpine; stays running for swap checks)
-docker build -t localhost:5001/robot-app:v1 -f docker/dummy-robot/Dockerfile docker/dummy-robot
-docker push localhost:5001/robot-app:v1
+make ota-circle              # rover starts driving in a circle
+make ota-figure-eight        # swap to a figure-8 controller
+make ota-status              # GET /v1/ota/rollouts (jq if installed)
+```
 
-# Start a rollout
+Watch the workflow at `http://localhost:14080/namespaces/default/workflows`
+— a `rollout-…` ID appears, completes in 1–2 seconds, and the
+`robot-app` container under `podman ps` flips to the new image.
+
+### Collision — Temporal drives the rover out of an obstacle
+
+The moon world has a 0.9 m boulder at `x = 8`. A contact sensor on
+the rover deck publishes Gazebo Contact messages → ros_gz_bridge →
+ROS `/contacts` → `collision_publisher` (in the robot container) →
+MQTT `events/{robot_id}/collision` → `collision-worker` →
+`CollisionResponse` Temporal workflow → MQTT `cmd/{robot_id}/twist`
+→ `twist_subscriber` → ROS `/cmd_vel` → gz `DiffDrive`.
+
+```bash
+make collide                 # publish a fake collision event
+# OR drive the rover into the boulder for real:
+make sim-drive-fwd LX=1.0    # call repeatedly until impact
+```
+
+`CollisionResponse` runs back-up → 90° turn-right → forward →
+stop. Visible in the Gazebo GUI and at `http://localhost:14080`.
+
+### (Original raw-API form, kept for reference)
+
+If you want to see the underlying contract:
+
+```bash
+podman build -t localhost:14050/robot-app:v1 -f docker/dummy-robot/Dockerfile docker/dummy-robot
+podman push --tls-verify=false localhost:14050/robot-app:v1
+
 curl -X POST http://localhost:8081/v1/ota/rollouts \
   -H "content-type: application/json" \
   -d '{
-    "image_ref": "localhost:5001/robot-app:v1",
+    "image_ref": "localhost:14050/robot-app:v1",
     "smoke_command": "true",
     "cohort_selector": {"robot_ids": ["lab-robot-01"]}
   }'
@@ -389,11 +427,13 @@ If all three are green, you're set up. Welcome.
 | Symptom                                | Likely cause                        | Fix                                                        |
 |----------------------------------------|-------------------------------------|------------------------------------------------------------|
 | `make lab-up` errors `no such image`   | Pull failed or rate-limited         | `docker login` / wait, retry                               |
-| Postgres exits code 3 at lab-up        | Wrong image (stock instead of TSDB) | We pin `timescale/timescaledb-ha`; rebase                  |
+| Postgres exits code 3 at lab-up        | Wrong image (stock instead of TSDB) | Pinned to `timescale/timescaledb-ha`; rebase if drifted    |
 | EMQX unhealthy                         | Port 1883 already in use            | `lsof -i :1883`; stop the other broker                     |
-| Agent crashes at startup               | Buffer dir not writable             | `chmod` the path or override `BUFFER_PATH`                 |
 | Bridge node import error               | `rclpy` not on `PYTHONPATH`         | `source /opt/ros/humble/setup.bash` first                  |
-| OTA stuck at PHASE_PULLED              | Robot can't reach registry          | Check robot's network to the registry hostname/port        |
+| OTA "docker not on PATH"               | Native agent didn't pick up an engine | `make agent-status`; ensure `docker` or `podman` is on host PATH |
+| OTA "http: server gave HTTP response to HTTPS client" | Podman pull tries HTTPS first    | Agent appends `--tls-verify=false` for podman; if you use docker, configure `insecure-registries` |
+| Rollout stuck `pending` for ~5 min     | Pre-fix bug: agent emitted PHASE_FAILED on rollback failure | Fixed; `git pull` and rebuild agent. Old rows clear at 5-min rollback timer |
+| Agent ports 50051 unreachable          | `robot` service not publishing the port | `make sim-down && make sim-up` to pick up the latest compose |
 | `pre-commit` hangs in installer-smoke  | Slow image pull on first run        | Run once manually: `bash .git-hooks/installer-smoke.sh`    |
 
 ---

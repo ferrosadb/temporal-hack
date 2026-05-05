@@ -113,33 +113,46 @@ The Makefile is the canonical interface. Discover targets with `make`
 or `make help`.
 
 ```bash
-# Building
+# Build / lint / test
 make tidy          # go mod tidy across both modules
-make build         # builds bin/{controlplane,telemetry-ingest,ota-worker,agent}
-
-# Linting / testing
+make build         # bin/{controlplane,telemetry-ingest,ota-worker,collision-worker,agent}
 make lint          # go vet + (optional) staticcheck on both modules
 make test          # go test -race -count=1 ./...
+make proto         # regen Go + Python protobuf bindings via containerized protoc
 
-# Lab stack (auto-detects docker vs podman)
-make container-info        # confirm the engine + compose command
-make lab-up                # validation cluster on 14xxx ports
-make lab-status            # probe ports
-make lab-down              # stop, keep state
-make lab-reset             # stop + wipe state
+# Lab cluster (compose). Auto-detects docker vs podman.
+make container-info         # which engine + compose command
+make lab-up / lab-down / lab-status / lab-reset
 
-# CI/smoke cluster — alternate ports (2xxxx); coexists with lab
-make ci-up                 # what the pre-push hook + GH Actions run
-make ci-status
-make ci-down               # tears down + wipes state
+# Sim (gazebo + robot + lab cluster) — preferred starting point.
+make sim-up                 # gazebo container + robot container + lab cluster
+make sim-up-headless        # no GUI; gz server only
+make sim-gui                # open the Gazebo browser GUI in default browser
+make sim-down / sim-logs
 
-# Sim (Gazebo + TurtleBot3 + bridge + agent in containers)
-make sim-up
-make sim-logs
-make sim-down
+# Host-side processes (Go binaries, PID files in .run/).
+# These do NOT run in compose; they live on the macOS host so they
+# can talk to the host's docker/podman CLI without bind-mount-socket
+# rootless gymnastics.
+make agent-up / agent-down / agent-status            # the rover's agent
+make workers-up / workers-down / workers-status      # ota-worker + collision-worker
+make controlplane-up / controlplane-down / controlplane-status   # OTA HTTP API on :8081
 
-# Protobuf regeneration
-make proto         # requires protoc + protoc-gen-go + protoc-gen-go-grpc
+# Drive helpers — direct gz-topic publish from inside the gazebo
+# container; no ROS install required on the host.
+make sim-drive-fwd LX=0.5      # default 0.5 m/s; override LX=
+make sim-drive-back / sim-drive-left / sim-drive-right / sim-drive-stop
+
+# Demos — one command per scenario.
+make ota-circle                # build + push + roll out drive-circle
+make ota-figure-eight          # build + push + roll out drive-figure-eight
+make ota-status                # GET /v1/ota/rollouts (jq if present)
+make collide                   # publish a fake collision event;
+                                # triggers the CollisionResponse Temporal workflow
+
+# CI/smoke cluster — same services, alternate (2xxxx) ports so it
+# coexists with `lab-up`. What the pre-push hook + GH Actions run.
+make ci-up / ci-down / ci-status
 ```
 
 End-to-end OTA walkthrough lives in `ONBOARDING.md` Section 9.

@@ -75,14 +75,23 @@ The two clusters run under separate Compose project names
 (`temporal-hack-lab` and `temporal-hack-ci`) so they can be brought up
 **simultaneously**. `make ci-up` is what the GitHub Actions
 `installer-smoke` job and the local `pre-push` hook both run.
-| Service           | Port  |
-|-------------------|-------|
-| Postgres          | 5432  |
-| Temporal frontend | 7233  |
-| Temporal UI       | 8080  |
-| MQTT              | 1883  |
-| MQTT dashboard    | 18083 |
-| Registry          | 5001  |
+
+### Sim-only ports (only `make sim-up`, not `make lab-up`)
+
+| Service               | Port  |
+|-----------------------|-------|
+| Gazebo noVNC          | 14680 |
+| Gazebo VNC            | 14900 |
+| Robot bridge gRPC     | 50051 |
+
+### Host-side processes (Go binaries via `make`, not in compose)
+
+| Process       | Port  |
+|---------------|-------|
+| Control plane | 8081  |
+| ota-worker    | (none, connects to Temporal :14733) |
+| collision-worker | (none, connects to Temporal :14733) |
+| agent         | (none, connects to MQTT :14883 + bridge :50051) |
 
 ## Production-target gaps (tracked, not v1)
 
