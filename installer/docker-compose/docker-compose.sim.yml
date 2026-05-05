@@ -38,10 +38,12 @@ services:
       - ../..:/src:ro
       - bridge-sock:/run/bridge
       - agent-data:/var/lib/agent
-      # Agent needs the docker socket on the host to perform OTA. In
-      # production this is the robot's own docker. For sim we mount
-      # the host docker so a rollout can swap a sibling container.
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Agent needs the container-runtime socket on the host to perform
+      # OTA. In production this is the robot's own daemon. For sim we
+      # mount the host's docker or podman socket so a rollout can swap
+      # a sibling container. CONTAINER_SOCK is supplied by the Makefile
+      # at compose time (resolves to docker.sock or podman.sock).
+      - ${CONTAINER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
     command: >
       bash -c "
         cd /src/agent &&

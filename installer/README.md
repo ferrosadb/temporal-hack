@@ -20,6 +20,34 @@ make lab-down     # stop containers, keep state
 make lab-reset    # stop + wipe state
 ```
 
+## Container engine
+
+`make` auto-detects `docker` or `podman` (in that order) and picks the
+right compose command. Inspect the choice with:
+
+```bash
+make container-info
+```
+
+Force a specific engine when both are installed:
+
+```bash
+make lab-up CONTAINER=podman
+```
+
+### Podman notes
+
+- **Rootless** is the default. The container socket is at
+  `$XDG_RUNTIME_DIR/podman/podman.sock`. The Makefile passes this to
+  `docker-compose.sim.yml` via the `CONTAINER_SOCK` env so the agent
+  container can OTA sibling containers.
+- Enable the API socket:
+  `systemctl --user enable --now podman.socket`
+- If `podman compose` is not available (older builds), the Makefile
+  falls back to `podman-compose` (`pip install podman-compose`).
+- Some compose features used by `temporalio/auto-setup` (named
+  healthcheck dependencies) require `podman ≥ 4.4`.
+
 Default ports:
 
 | Service           | Port  |

@@ -3,6 +3,56 @@ SHELL := /usr/bin/env bash
 CLOUD_PKG := ./cloud/...
 AGENT_PKG := ./agent/...
 
+# Container engine detection. Order: explicit override -> docker -> podman.
+# Override with `make lab-up CONTAINER=podman` if both are installed and
+# you want the non-default. The choice picks both the compose command
+# and the path to the container runtime socket used by the agent.
+ifdef CONTAINER
+  CONTAINER_ENGINE := $(CONTAINER)
+else ifneq (,$(shell command -v docker 2>/dev/null))
+  CONTAINER_ENGINE := docker
+else ifneq (,$(shell command -v podman 2>/dev/null))
+  CONTAINER_ENGINE := podman
+else
+  CONTAINER_ENGINE := none
+endif
+
+# Resolve the compose command for the chosen engine. `docker compose`
+# (v2 plugin) and `podman compose` are the modern paths; `podman-compose`
+# is the older standalone Python tool. Prefer the integrated subcommand.
+ifeq ($(CONTAINER_ENGINE),docker)
+  COMPOSE := docker compose
+  CONTAINER_SOCK := /var/run/docker.sock
+else ifeq ($(CONTAINER_ENGINE),podman)
+  ifeq (,$(shell podman compose version 2>/dev/null))
+    ifneq (,$(shell command -v podman-compose 2>/dev/null))
+      COMPOSE := podman-compose
+    else
+      COMPOSE := podman compose
+    endif
+  else
+    COMPOSE := podman compose
+  endif
+  # Rootless podman: $XDG_RUNTIME_DIR/podman/podman.sock. Rootful: /run/podman/podman.sock.
+  CONTAINER_SOCK := $(if $(XDG_RUNTIME_DIR),$(XDG_RUNTIME_DIR)/podman/podman.sock,/run/podman/podman.sock)
+else
+  COMPOSE := /bin/false
+  CONTAINER_SOCK :=
+endif
+
+.PHONY: container-info
+container-info: ## Show detected container engine and compose command
+	@echo "engine:    $(CONTAINER_ENGINE)"
+	@echo "compose:   $(COMPOSE)"
+	@echo "sock:      $(CONTAINER_SOCK)"
+
+.PHONY: container-check
+container-check:
+	@if [ "$(CONTAINER_ENGINE)" = "none" ]; then \
+	  echo "ERROR: no container engine found (docker or podman required)"; \
+	  exit 1; \
+	fi
+
 .PHONY: help
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-22s %s\n", $$1, $$2}'
@@ -48,16 +98,18 @@ proto: ## Regenerate protobuf bindings
 		proto/*.proto
 
 .PHONY: lab-up
-lab-up: ## Bring up local lab stack (Postgres + Temporal + MQTT + registry)
-	cd installer/docker-compose && docker compose up -d
+lab-up: container-check ## Bring up local lab stack (Postgres + Temporal + MQTT + registry)
+	@echo "[$(CONTAINER_ENGINE)] bringing up lab stack via '$(COMPOSE)'"
+	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) $(COMPOSE) up -d
 	@echo "Lab stack starting. Run 'make lab-status' to check."
 
 .PHONY: lab-down
-lab-down: ## Tear down local lab stack
-	cd installer/docker-compose && docker compose down
+lab-down: container-check ## Tear down local lab stack
+	cd installer/docker-compose && $(COMPOSE) down
 
 .PHONY: lab-status
 lab-status: ## Probe lab services
+	@echo "--- engine: $(CONTAINER_ENGINE) (compose: $(COMPOSE)) ---"
 	@echo "--- Temporal frontend ---"
 	@curl -sf http://localhost:8080 >/dev/null && echo "Temporal UI: up" || echo "Temporal UI: down"
 	@echo "--- MQTT broker ---"
@@ -68,21 +120,22 @@ lab-status: ## Probe lab services
 	@curl -sf http://localhost:5000/v2/ >/dev/null && echo "Registry: up" || echo "Registry: down"
 
 .PHONY: lab-reset
-lab-reset: ## Wipe lab state and restart
-	cd installer/docker-compose && docker compose down -v
+lab-reset: container-check ## Wipe lab state and restart
+	cd installer/docker-compose && $(COMPOSE) down -v
 	$(MAKE) lab-up
 
 .PHONY: sim-up
-sim-up: ## Bring up the lab stack + a Gazebo robot sim with bridge + agent
-	cd installer/docker-compose && \
-	  docker compose -f docker-compose.yml -f docker-compose.sim.yml up -d --build
+sim-up: container-check ## Bring up the lab stack + a Gazebo robot sim with bridge + agent
+	@echo "[$(CONTAINER_ENGINE)] bringing up sim stack via '$(COMPOSE)'"
+	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) \
+	  $(COMPOSE) -f docker-compose.yml -f docker-compose.sim.yml up -d --build
 
 .PHONY: sim-down
-sim-down: ## Tear down the lab stack + sim
+sim-down: container-check ## Tear down the lab stack + sim
 	cd installer/docker-compose && \
-	  docker compose -f docker-compose.yml -f docker-compose.sim.yml down
+	  $(COMPOSE) -f docker-compose.yml -f docker-compose.sim.yml down
 
 .PHONY: sim-logs
-sim-logs: ## Tail logs from sim + agent
+sim-logs: container-check ## Tail logs from sim + agent
 	cd installer/docker-compose && \
-	  docker compose -f docker-compose.yml -f docker-compose.sim.yml logs -f sim agent
+	  $(COMPOSE) -f docker-compose.yml -f docker-compose.sim.yml logs -f sim agent
