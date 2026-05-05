@@ -60,7 +60,10 @@ else
     # OGRE2 will use Mesa's llvmpipe and render to the virtual fb.
     export LIBGL_ALWAYS_SOFTWARE=1
     export OGRE2_RTSHADERSYSTEM_WRITE_SHADERS_TO_DISK=0
-    ign gazebo -v 4 "$SIM_WORLD" &
+    # -r: start running (not paused). Without this Fortress opens
+    # paused and the user has to click Play before any movement
+    # commands have effect.
+    ign gazebo -r -v 4 "$SIM_WORLD" &
     PIDS+=($!)
 
     echo
@@ -88,8 +91,19 @@ case "$SIM_WORLD" in
             -r /model/vehicle_blue/odometry:=/odom &
         PIDS+=($!)
         ;;
+    moon.sdf)
+        sleep 4
+        echo "[sim] starting ros_gz_bridge: /cmd_vel ↔ /model/perseverance/cmd_vel"
+        ros2 run ros_gz_bridge parameter_bridge \
+            /model/perseverance/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist \
+            /model/perseverance/odometry@nav_msgs/msg/Odometry@ignition.msgs.Odometry \
+            --ros-args \
+            -r /model/perseverance/cmd_vel:=/cmd_vel \
+            -r /model/perseverance/odometry:=/odom &
+        PIDS+=($!)
+        ;;
     *)
-        echo "[sim] no ros_gz_bridge for world '$SIM_WORLD' (no vehicle_blue)"
+        echo "[sim] no ros_gz_bridge wired for world '$SIM_WORLD'"
         ;;
 esac
 
