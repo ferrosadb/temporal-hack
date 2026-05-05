@@ -12,7 +12,11 @@
 # Wipe state:  docker compose down -v
 services:
   postgres:
-    image: postgres:15-alpine
+    # TimescaleDB-HA image. Stock postgres:15-alpine does not ship the
+    # timescaledb extension, so init-telemetry.sql's CREATE EXTENSION
+    # call would fail (IF NOT EXISTS only checks installation state,
+    # not availability). Closes specs/todo/timescaledb-image-swap.md.
+    image: timescale/timescaledb-ha:pg15
     environment:
       POSTGRES_USER: temporal
       POSTGRES_PASSWORD: temporal
@@ -20,16 +24,10 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/home/postgres/pgdata/data
       - ../../deploy/postgres/init-temporal.sql:/docker-entrypoint-initdb.d/01-temporal.sql:ro
       - ../../deploy/postgres/init-telemetry.sql:/docker-entrypoint-initdb.d/02-telemetry.sql:ro
       - ../../deploy/postgres/init-ota.sql:/docker-entrypoint-initdb.d/03-ota.sql:ro
-    # We want timescaledb but the official image is timescale/timescaledb;
-    # use it instead in installations that need hypertables.
-    # For lab simplicity we keep stock postgres; the init script will
-    # CREATE EXTENSION IF NOT EXISTS timescaledb but skip silently if
-    # the extension is unavailable. Production installer must ship
-    # timescale/timescaledb-ha.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U temporal -d telemetry"]
       interval: 5s
