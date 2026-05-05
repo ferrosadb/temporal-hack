@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
-# Source ROS 2 + the TurtleBot3 launch tree.
+# ROS 2's setup.bash references variables it doesn't always pre-set
+# (AMENT_TRACE_SETUP_FILES, etc.). Disable nounset for the source
+# step only; turn it back on for our own logic afterwards.
+set +u
 source /opt/ros/humble/setup.bash
+set -u
 
 TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-burger}"
 WORLD="${WORLD:-empty_world.launch.py}"
