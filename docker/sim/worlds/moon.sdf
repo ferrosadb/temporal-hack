@@ -1,0 +1,115 @@
+<?xml version="1.0"?>
+<!--
+  Hand-authored moon world for Gazebo Fortress.
+  Lunar gravity, black sky, low ambient, single sun. A lightly-bumpy
+  gray ground plane plus a scattering of primitive "rocks" (ellipsoids).
+  Includes the Perseverance rover from /opt/sim/models so it is
+  visible at startup.
+
+  This is the fast-path stand-in for the procedurally-generated
+  AndrejOrsula/space_robotics_gz_envs moon.sdf. The procgen path
+  produces photoreal lunar terrain via Blender and is a follow-up.
+-->
+<sdf version="1.9">
+  <world name="moon">
+    <!-- Physics. Plugin filenames are Fortress (ignition-gazebo*); on
+         Harmonic these become gz-sim-*. Either is fine — Ignition keeps
+         backward-compatible aliases. -->
+    <plugin filename="ignition-gazebo-physics-system"          name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system"    name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-contact-system"          name="ignition::gazebo::systems::Contact"/>
+
+    <physics name="default" type="ignored">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Lunar gravity -->
+    <gravity>0 0 -1.622</gravity>
+
+    <!-- Scene: deep space backdrop, low ambient (Moon has no atmosphere) -->
+    <scene>
+      <ambient>0.04 0.04 0.04 1</ambient>
+      <background>0.0 0.0 0.0 1</background>
+      <grid>false</grid>
+      <origin_visual>false</origin_visual>
+    </scene>
+
+    <!-- Sun (single hard directional light, like real lunar surface) -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 100 0 0.55 -0.6</pose>
+      <diffuse>1.0 0.98 0.92 1</diffuse>
+      <specular>0.4 0.4 0.4 1</specular>
+      <direction>-0.6 -0.4 -0.7</direction>
+    </light>
+
+    <!-- Ground plane: 200x200, Moon-gray regolith colour -->
+    <model name="lunar_ground">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+          <material>
+            <ambient>0.18 0.17 0.16 1</ambient>
+            <diffuse>0.42 0.40 0.38 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Scattered rocks (ellipsoids, varying poses) -->
+    <model name="rock_1">
+      <static>true</static><pose>3.2 1.7 0.10 0 0 0.4</pose>
+      <link name="l"><visual name="v"><geometry><ellipsoid><radii>0.30 0.22 0.12</radii></ellipsoid></geometry>
+        <material><ambient>0.18 0.17 0.16 1</ambient><diffuse>0.36 0.34 0.32 1</diffuse></material></visual></link>
+    </model>
+    <model name="rock_2">
+      <static>true</static><pose>-2.8 2.4 0.07 0 0 1.1</pose>
+      <link name="l"><visual name="v"><geometry><ellipsoid><radii>0.18 0.14 0.08</radii></ellipsoid></geometry>
+        <material><ambient>0.18 0.17 0.16 1</ambient><diffuse>0.34 0.32 0.30 1</diffuse></material></visual></link>
+    </model>
+    <model name="rock_3">
+      <static>true</static><pose>-4.5 -1.2 0.16 0 0 -0.3</pose>
+      <link name="l"><visual name="v"><geometry><ellipsoid><radii>0.45 0.30 0.18</radii></ellipsoid></geometry>
+        <material><ambient>0.20 0.19 0.17 1</ambient><diffuse>0.38 0.36 0.34 1</diffuse></material></visual></link>
+    </model>
+    <model name="rock_4">
+      <static>true</static><pose>1.4 -3.6 0.05 0 0 2.1</pose>
+      <link name="l"><visual name="v"><geometry><ellipsoid><radii>0.12 0.10 0.05</radii></ellipsoid></geometry>
+        <material><ambient>0.18 0.17 0.16 1</ambient><diffuse>0.30 0.28 0.26 1</diffuse></material></visual></link>
+    </model>
+    <model name="rock_5">
+      <static>true</static><pose>-1.8 -2.7 0.09 0 0 0.8</pose>
+      <link name="l"><visual name="v"><geometry><ellipsoid><radii>0.22 0.18 0.10</radii></ellipsoid></geometry>
+        <material><ambient>0.19 0.18 0.16 1</ambient><diffuse>0.36 0.34 0.32 1</diffuse></material></visual></link>
+    </model>
+    <model name="rock_6">
+      <static>true</static><pose>5.1 -0.8 0.14 0 0 1.7</pose>
+      <link name="l"><visual name="v"><geometry><ellipsoid><radii>0.36 0.28 0.16</radii></ellipsoid></geometry>
+        <material><ambient>0.20 0.19 0.17 1</ambient><diffuse>0.40 0.38 0.36 1</diffuse></material></visual></link>
+    </model>
+    <model name="rock_7">
+      <static>true</static><pose>0.4 4.8 0.08 0 0 -1.4</pose>
+      <link name="l"><visual name="v"><geometry><ellipsoid><radii>0.20 0.16 0.09</radii></ellipsoid></geometry>
+        <material><ambient>0.17 0.16 0.15 1</ambient><diffuse>0.32 0.30 0.28 1</diffuse></material></visual></link>
+    </model>
+    <model name="rock_8">
+      <static>true</static><pose>3.8 -4.2 0.11 0 0 0.2</pose>
+      <link name="l"><visual name="v"><geometry><ellipsoid><radii>0.28 0.22 0.13</radii></ellipsoid></geometry>
+        <material><ambient>0.18 0.17 0.16 1</ambient><diffuse>0.36 0.34 0.32 1</diffuse></material></visual></link>
+    </model>
+
+    <!-- Perseverance rover (model lives at /opt/sim/models/perseverance) -->
+    <include>
+      <uri>model://perseverance</uri>
+      <name>perseverance</name>
+      <pose>0 0 0 0 0 0</pose>
+    </include>
+  </world>
+</sdf>

@@ -1,43 +1,24 @@
-# Robot simulation container.
+# Robot simulation container — Moon world + Ingenuity helicopter.
 #
-# Bundles ROS 2 Humble + Gazebo Classic + TurtleBot3 + the Python
-# bridge node (rclpy → gRPC) + a small launch script that brings up
-# Gazebo with a TurtleBot3 model and the bridge in one process tree.
+# Base: ros:humble-ros-base (multi-arch — amd64 + arm64 native).
+# Sim:  Gazebo Harmonic (LTS 2024-2028) from packages.osrfoundation.org.
+#       Replaces Ignition Fortress; same plugin family (gz-sim-*).
+# GUI:  Xvfb + fluxbox + x11vnc + noVNC + websockify, browser-served.
 #
-# This is the "basic robot" used end-to-end:
-#   - publishes /battery_state and /odom from the simulated robot
-#   - bridge subscribes and republishes via gRPC on a Unix socket
-#   - the Go agent (in a sibling container) consumes that gRPC stream
-#
-# Image is large (~3-4 GB) because Gazebo + ROS 2 + Python ML wheels
-# pull in a lot. Acceptable for v1; sim is dev-only per D-13.
-# Multi-arch base. osrf/ros:humble-desktop is amd64-only, which forced
-# qemu user-mode emulation on arm64 hosts (Apple Silicon) — and
-# Gazebo's OGRE/LLVM JIT crashes under qemu with "64-bit code requested
-# on a subtarget that doesn't support it". library/ros:humble-ros-base
-# ships native amd64 + arm64 manifests. We add the gazebo + turtlebot3
-# packages explicitly below since ros-base doesn't pre-install them.
+# Why Harmonic, not Fortress: the AndrejOrsula moon world targets
+# gz-sim-* plugin filenames. Harmonic ships them and is arm64-native.
+# Why we don't run their Blender procgen here: Blender 4.3 is x86_64-
+# only on Linux, and their amd64 image hits a /bin/sh portability bug
+# under buildah. The procgen step is a clean follow-up; for now we
+# ship a hand-authored moon.sdf + ingenuity.sdf.
 FROM ros:humble-ros-base
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV TURTLEBOT3_MODEL=burger
 ENV ROS_DOMAIN_ID=42
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-# Packages, by source:
-#  - ros-humble-* from packages.ros.org (arm64 + amd64 published)
-#  - ignition-fortress from packages.osrfoundation.org (arm64 + amd64)
-#  - X stack and Mesa from Ubuntu jammy main
-#
-# Why Ignition Fortress and not Gazebo Classic: Gazebo Classic is
-# amd64-only in apt; the only way to run it on arm64 is qemu user-
-# mode emulation, where OGRE's LLVM JIT crashes. Fortress is the
-# modern Gazebo (renamed gz-sim from Garden onward), LTS 2022-2027,
-# with native arm64 builds.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        wget \
-        gnupg \
-        lsb-release \
-        ca-certificates \
+        wget gnupg lsb-release ca-certificates \
     && wget -qO /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
         https://packages.osrfoundation.org/gazebo.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
@@ -62,25 +43,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         net-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Use Cyclone DDS — slightly more reliable defaults for sim than Fast DDS.
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-# Bridge: copy the source from the repo (build context is repo root).
-# osrf/ros:humble-desktop ships pip 22.x. We install into the system
-# site-packages so rclpy stays importable from the bridge process
-# without PYTHONPATH gymnastics. Upgrade pip first to get the
-# --break-system-packages flag (PEP 668), then install.
+# Bridge package + deps.
 WORKDIR /opt/bridge
 COPY bridge/ /opt/bridge/
 RUN python3 -m pip install --no-cache-dir --upgrade "pip>=23.0" \
  && python3 -m pip install --no-cache-dir --break-system-packages /opt/bridge
 
+# Sim worlds + models. GZ_SIM_RESOURCE_PATH is read by gz-sim to
+# resolve `model://...` URIs in include directives.
+COPY docker/sim/worlds  /opt/sim/worlds
+COPY docker/sim/models  /opt/sim/models
+ENV GZ_SIM_RESOURCE_PATH="/opt/sim/models:/opt/sim/worlds"
+
 # Sim launch script.
 COPY docker/sim/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Bridge listens on a host-mounted socket so the agent (sibling
-# container) can attach. See installer/docker-compose/docker-compose.sim.yml.
 VOLUME ["/run/bridge"]
 
 # noVNC (browser GUI):  http://localhost:14680

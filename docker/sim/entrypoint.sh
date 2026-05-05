@@ -25,7 +25,7 @@ shutdown() {
 }
 trap shutdown SIGINT SIGTERM
 
-SIM_WORLD="${SIM_WORLD:-diff_drive.sdf}"
+SIM_WORLD="${SIM_WORLD:-moon.sdf}"
 
 if [ "$HEADLESS" = "1" ]; then
     echo "[sim] HEADLESS=1; running ign gazebo server only ($SIM_WORLD)"
@@ -71,20 +71,27 @@ else
     echo
 fi
 
-# ROS 2 ↔ Ignition bridge so external ROS 2 controllers can drive the
-# robot. The diff_drive demo's vehicle_blue subscribes to the Ignition
-# topic /model/vehicle_blue/cmd_vel; we ROS-side-remap that to plain
-# /cmd_vel, which is the ROS 2 convention robot-app controllers
-# publish on. /odom is bridged the other way for telemetry.
-sleep 4
-echo "[sim] starting ros_gz_bridge: ROS 2 /cmd_vel ↔ ign /model/vehicle_blue/cmd_vel"
-ros2 run ros_gz_bridge parameter_bridge \
-    /model/vehicle_blue/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist \
-    /model/vehicle_blue/odometry@nav_msgs/msg/Odometry@ignition.msgs.Odometry \
-    --ros-args \
-    -r /model/vehicle_blue/cmd_vel:=/cmd_vel \
-    -r /model/vehicle_blue/odometry:=/odom &
-PIDS+=($!)
+# ROS 2 ↔ Ignition bridge for the diff_drive demo world only. That
+# world's `vehicle_blue` model subscribes to /model/vehicle_blue/cmd_vel;
+# external ROS 2 controllers publish on /cmd_vel, so we remap. Skip
+# this for moon.sdf (no vehicle_blue there) — the bridge would just
+# sit waiting for a non-existent topic.
+case "$SIM_WORLD" in
+    diff_drive.sdf|diff_drive_skid.sdf)
+        sleep 4
+        echo "[sim] starting ros_gz_bridge: /cmd_vel ↔ /model/vehicle_blue/cmd_vel"
+        ros2 run ros_gz_bridge parameter_bridge \
+            /model/vehicle_blue/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist \
+            /model/vehicle_blue/odometry@nav_msgs/msg/Odometry@ignition.msgs.Odometry \
+            --ros-args \
+            -r /model/vehicle_blue/cmd_vel:=/cmd_vel \
+            -r /model/vehicle_blue/odometry:=/odom &
+        PIDS+=($!)
+        ;;
+    *)
+        echo "[sim] no ros_gz_bridge for world '$SIM_WORLD' (no vehicle_blue)"
+        ;;
+esac
 
 # Synthetic battery (TurtleBot3 sim doesn't emit /battery_state).
 sleep 6
