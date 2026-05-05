@@ -152,8 +152,12 @@ proto: container-check ## Regenerate Go + Python protobuf bindings via container
 #   Postgres       14432
 #   Temporal       14733
 #   Temporal UI    14080
-#   MQTT           14883
-#   MQTT dashboard 14093
+#   MQTT           7883   (cloudflared tunnel listener — *host*-side,
+#                          not a lab container; bring up cloudflared
+#                          before make sim-up. Run a local broker
+#                          instead with: docker compose --profile
+#                          internal-broker up -d)
+#   MQTT dashboard 14093  (only when --profile internal-broker)
 #   Registry       14050
 #
 # Override any of POSTGRES_PORT TEMPORAL_PORT TEMPORAL_UI_PORT MQTT_PORT
@@ -176,7 +180,7 @@ lab-down: container-check ## Tear down local lab stack
 .PHONY: lab-status
 lab-status: ## Probe lab services
 	@LAB_TEMPORAL_UI_PORT="$${TEMPORAL_UI_PORT:-14080}"; \
-	 LAB_MQTT_PORT="$${MQTT_PORT:-14883}"; \
+	 LAB_MQTT_PORT="$${MQTT_PORT:-7883}"; \
 	 LAB_POSTGRES_PORT="$${POSTGRES_PORT:-14432}"; \
 	 LAB_REGISTRY_PORT="$${REGISTRY_PORT:-14050}"; \
 	 echo "--- engine: $(CONTAINER_ENGINE) (compose: $(COMPOSE)) ---"; \
@@ -274,18 +278,23 @@ sim-drive-stop: ## Stop the rover
 #   Registry       25050
 # =============================================================================
 
-CI_PROJECT := temporal-hack-ci
-CI_FILES   := -f docker-compose.yml -f docker-compose.ci.yml
+CI_PROJECT  := temporal-hack-ci
+CI_FILES    := -f docker-compose.yml -f docker-compose.ci.yml
+# CI runners don't have the developer's cloudflared MQTT tunnel,
+# so the CI smoke ALWAYS includes the internal-broker profile —
+# this brings up EMQX inside the compose project for the duration
+# of the test.
+CI_PROFILES := --profile internal-broker
 
 .PHONY: ci-up
 ci-up: container-check ## Bring up an isolated CI/smoke cluster on alternate ports
 	@echo "[$(CONTAINER_ENGINE)] bringing up CI stack on alt ports"
 	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) \
-	  $(COMPOSE) -p $(CI_PROJECT) $(CI_FILES) up -d --wait
+	  $(COMPOSE) -p $(CI_PROJECT) $(CI_PROFILES) $(CI_FILES) up -d --wait
 
 .PHONY: ci-down
 ci-down: container-check ## Tear down the CI/smoke cluster (and wipe its volumes)
-	cd installer/docker-compose && $(COMPOSE) -p $(CI_PROJECT) $(CI_FILES) down -v
+	cd installer/docker-compose && $(COMPOSE) -p $(CI_PROJECT) $(CI_PROFILES) $(CI_FILES) down -v
 
 .PHONY: ci-status
 ci-status: ## Probe CI services on their alternate ports

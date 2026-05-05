@@ -65,22 +65,21 @@ services:
     ports:
       - "${TEMPORAL_UI_PORT:-14080}:8080"
 
+  # Local EMQX broker — disabled by default. The lab now consumes
+  # the developer's externally-tunneled MQTT broker via cloudflared
+  # listening on 127.0.0.1:${MQTT_PORT:-7883}. Bring this back with
+  # `--profile internal-broker` when you need a local broker (CI,
+  # offline dev, etc.):
+  #   docker compose --profile internal-broker up -d
   mqtt:
-    # EMQX 5.x defaults: anonymous auth, listener on 1883, dashboard on
-    # 18083 — exactly the v1 lab posture. We do NOT mount a custom
-    # emqx.conf for the lab because the file format is volatile across
-    # 5.x point releases (e.g. session_persistence vs durable_sessions).
-    # See deploy/mqtt/emqx.conf.example for the production-target
-    # config reference; production installer renders it through a
-    # version-pinned schema check.
+    profiles: ["internal-broker"]
     image: emqx/emqx:5.7.1
     ports:
-      - "${MQTT_PORT:-14883}:1883"               # MQTT
-      - "${MQTT_DASHBOARD_PORT:-14093}:18083"    # dashboard
+      - "${MQTT_PORT:-7883}:1883"
+      - "${MQTT_DASHBOARD_PORT:-14093}:18083"
     volumes:
       - mqttdata:/opt/emqx/data
     healthcheck:
-      # `emqx ctl status` is the documented EMQX 5.x liveness check.
       test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
       interval: 10s
       timeout: 5s

@@ -67,7 +67,7 @@ Default ports:
 | Postgres          | 14432    | 25432   |
 | Temporal frontend | 14733    | 27233   |
 | Temporal UI       | 14080    | 28080   |
-| MQTT              | 14883    | 21883   |
+| MQTT              | 7883    | 21883   |
 | MQTT dashboard    | 14093    | 28083   |
 | Registry          | 14050    | 25050   |
 

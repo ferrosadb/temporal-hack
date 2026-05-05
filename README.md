@@ -96,7 +96,7 @@ docker push localhost:5001/robot-app:v1
 # Or: make dummy-robot-image   (same; requires lab registry + insecure-registries for HTTP)
 
 # Run the OTA worker (separate terminal)
-TEMPORAL_ADDR=localhost:14733 BROKER_URL=tcp://localhost:14883 \
+TEMPORAL_ADDR=localhost:14733 BROKER_URL=tcp://localhost:7883 \
   TSDB_DSN="postgres://temporal:temporal@localhost:14432/telemetry?sslmode=disable" \
   ./bin/ota-worker
 

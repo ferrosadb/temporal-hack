@@ -258,7 +258,7 @@ All four services should report `up` on the 14xxx port range:
 
 ```
 Temporal UI:    up   (:14080)
-MQTT broker:    up   (:14883)
+MQTT broker:    up   (:7883)
 Postgres:       up   (:14432)
 Registry:       up   (:14050)
 ```

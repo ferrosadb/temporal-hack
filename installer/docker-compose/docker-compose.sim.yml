@@ -35,16 +35,22 @@ services:
   agent:
     image: golang:1.22-bookworm
     depends_on:
-      mqtt:
-        condition: service_healthy
       sim:
         condition: service_started
+    # `host.docker.internal` resolves to the host bridge so the agent
+    # can reach the developer's cloudflared MQTT tunnel listener on
+    # 127.0.0.1:7883. Podman supports `host.containers.internal`
+    # automatically; for Docker we add the alias via extra_hosts.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     working_dir: /src/agent
     environment:
       ROBOT_ID: sim-robot-01
-      # mqtt and sim are sibling services on the same Compose network;
-      # the agent uses the canonical container-internal ports.
-      BROKER_URL: tcp://mqtt:1883
+      # The lab no longer runs its own EMQX. The MQTT broker is
+      # whatever cloudflared exposes on the host's port 7883
+      # (matching MQTT_PORT in docker-compose.yml). Override
+      # BROKER_URL if you tunnel to a different host/port.
+      BROKER_URL: ${BROKER_URL:-tcp://host.docker.internal:7883}
       BUFFER_PATH: /var/lib/agent/buffer.db
       BRIDGE_ADDR: unix:///run/bridge/temporal-hack-bridge.sock
       # OTA-spawned robot-app containers must join the lab network and
