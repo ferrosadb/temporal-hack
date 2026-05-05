@@ -262,6 +262,13 @@ sim-drive-stop: ## Stop the rover
 	@$(CONTAINER_ENGINE) exec $(SIM_CONTAINER) bash -c \
 	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "linear: {x: 0}, angular: {z: 0}"'
 
+# Demo helpers
+.PHONY: demo-swap
+demo-swap: ## Fire an OTA rollout: circle → figure-eight (robot-app on sim-robot-01)
+	curl -sX POST http://localhost:8081/v1/ota/rollouts \
+	  -H "content-type: application/json" \
+	  -d '{"image_ref":"localhost:14050/robot-app:figure-eight-v1","smoke_command":"true","cohort_selector":{"robot_ids":["sim-robot-01"]}}'
+
 # =============================================================================
 # CI cluster (smoke / pre-push parity) — alternate ports so it can run
 # alongside `make lab-up` on the same host. Used by .git-hooks/installer-smoke.sh
