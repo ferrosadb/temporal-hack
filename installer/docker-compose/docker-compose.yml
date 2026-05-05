@@ -62,15 +62,22 @@ services:
       - "8080:8080"
 
   mqtt:
+    # EMQX 5.x defaults: anonymous auth, listener on 1883, dashboard on
+    # 18083 — exactly the v1 lab posture. We do NOT mount a custom
+    # emqx.conf for the lab because the file format is volatile across
+    # 5.x point releases (e.g. session_persistence vs durable_sessions).
+    # See deploy/mqtt/emqx.conf.example for the production-target
+    # config reference; production installer renders it through a
+    # version-pinned schema check.
     image: emqx/emqx:5.7.1
     ports:
       - "1883:1883"   # MQTT
       - "18083:18083" # dashboard
     volumes:
-      - ../../deploy/mqtt/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       - mqttdata:/opt/emqx/data
     healthcheck:
-      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      # /dev/tcp is a bash builtin; EMQX images include bash.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/1883 && exec 3<&- && exec 3>&-"]
       interval: 10s
       timeout: 5s
       retries: 6

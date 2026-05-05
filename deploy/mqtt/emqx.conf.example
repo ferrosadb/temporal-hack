@@ -1,4 +1,13 @@
-## EMQX configuration for the lab broker.
+## EMQX configuration reference (NOT mounted by the lab compose).
+##
+## The lab compose runs EMQX 5.x with default config. This file is
+## the production-target reference — keys here match EMQX 5.7 schema
+## but **must** be re-validated against the version actually shipped
+## by the installer before mounting. Some keys move between 5.x point
+## releases (e.g. session_persistence -> durable_sessions, several
+## listener tunables) and a 127-exit container is hard to debug
+## downstream. Production installer should run `emqx ctl conf check`
+## or equivalent against the rendered config before swapping it in.
 ##
 ## v1 posture: anonymous + PSK allowed only inside the customer DC
 ## perimeter. mTLS replaces this in S5–S6 (D-11). Do NOT expose this
