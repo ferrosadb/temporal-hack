@@ -25,9 +25,11 @@ shutdown() {
 }
 trap shutdown SIGINT SIGTERM
 
+SIM_WORLD="${SIM_WORLD:-diff_drive.sdf}"
+
 if [ "$HEADLESS" = "1" ]; then
-    echo "[sim] HEADLESS=1; running ign gazebo server only (no display)"
-    ign gazebo -s -v 4 empty.sdf &
+    echo "[sim] HEADLESS=1; running ign gazebo server only ($SIM_WORLD)"
+    ign gazebo -s -v 4 "$SIM_WORLD" &
     PIDS+=($!)
 else
     # Start a virtual X display, a minimal window manager, a VNC
@@ -53,12 +55,12 @@ else
     websockify --web=/usr/share/novnc 6080 localhost:5900 &
     PIDS+=($!)
 
-    echo "[sim] launching Ignition Fortress with GUI (DISPLAY=$DISPLAY)"
+    echo "[sim] launching Ignition Fortress with GUI: $SIM_WORLD"
     # Software OpenGL is the only path that works in Xvfb (no GPU).
     # OGRE2 will use Mesa's llvmpipe and render to the virtual fb.
     export LIBGL_ALWAYS_SOFTWARE=1
     export OGRE2_RTSHADERSYSTEM_WRITE_SHADERS_TO_DISK=0
-    ign gazebo -v 4 empty.sdf &
+    ign gazebo -v 4 "$SIM_WORLD" &
     PIDS+=($!)
 
     echo
