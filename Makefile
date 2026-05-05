@@ -121,6 +121,38 @@ WORKER_TEMPORAL_ADDR ?= localhost:14733
 WORKER_BROKER_URL   ?= tcp://localhost:14883
 WORKER_TSDB_DSN     ?= postgres://temporal:temporal@localhost:14432/telemetry?sslmode=disable
 
+# Native agent — runs as a Go binary on the host (macOS). Avoids
+# bind-mounting the container-runtime socket into a sibling
+# container (rootless podman idmap makes that path painful) and
+# uses the host's docker/podman CLI directly when an OTA fires.
+AGENT_ROBOT_ID    ?= sim-robot-01
+AGENT_BROKER_URL  ?= tcp://localhost:14883
+AGENT_BRIDGE_ADDR ?= localhost:50051
+AGENT_BUFFER_PATH ?= .run/agent-buffer.db
+AGENT_OTA_RUN_ARGS ?= --network=temporal-hack-lab_default,-e,ROS_DOMAIN_ID=42,-e,RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+.PHONY: agent-up
+agent-up: build-agent ## Start the agent natively on the host (preferred for local dev)
+	@mkdir -p .run
+	@ROBOT_ID=$(AGENT_ROBOT_ID) \
+	  BROKER_URL=$(AGENT_BROKER_URL) \
+	  BRIDGE_ADDR=$(AGENT_BRIDGE_ADDR) \
+	  BUFFER_PATH=$(AGENT_BUFFER_PATH) \
+	  OTA_RUN_ARGS="$(AGENT_OTA_RUN_ARGS)" \
+	  nohup ./bin/agent > .run/agent.log 2>&1 & echo $$! > .run/agent.pid
+	@sleep 1
+	@echo "agent             PID $$(cat .run/agent.pid 2>/dev/null)             log .run/agent.log"
+
+.PHONY: agent-down
+agent-down: ## Stop the native agent
+	@[ -f .run/agent.pid ] && kill "$$(cat .run/agent.pid)" 2>/dev/null && rm -f .run/agent.pid && echo "stopped agent" || true
+
+.PHONY: agent-status
+agent-status: ## Show native agent status
+	@pid="$$(cat .run/agent.pid 2>/dev/null || echo '')"; \
+	 if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then echo "agent: running (pid $$pid)"; \
+	 else echo "agent: not running"; fi
+
 .PHONY: workers-up
 workers-up: build-cloud ## Start ota-worker + collision-worker in the background
 	@mkdir -p .run

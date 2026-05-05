@@ -32,11 +32,36 @@ services:
     environment:
       ROS_DOMAIN_ID: 42
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    # gRPC bridge port published to the host so a NATIVE agent
+    # binary (running on macOS) can connect at localhost:50051.
+    # Keep `expose` for in-network containers that still talk to
+    # robot:50051 by service name.
     expose:
       - "50051"
+    ports:
+      - "${ROBOT_BRIDGE_PORT:-50051}:50051"
 
+  # The agent has TWO supported deployment modes:
+  #
+  #   1. NATIVE (default for local dev) — run as a Go binary on the
+  #      host: `make agent-up`. Avoids the rootless-podman bind-mount-
+  #      socket headache and uses the host's docker/podman CLI
+  #      directly. The robot service publishes 50051 to the host so
+  #      the native agent reaches the bridge at localhost:50051.
+  #
+  #   2. CONTAINERISED (production target, profile-gated) — run as a
+  #      compose service. Requires a working bind mount of the
+  #      container-runtime socket. Bring up with:
+  #         docker compose --profile in-container-agent up -d
+  #
   agent:
+    profiles: ["in-container-agent"]
     image: golang:1.22-bookworm
+    # keep-id maps the container's UIDs onto the host (podman VM) user
+    # that started the compose. Without it, rootless podman idmap
+    # blocks the container's root from reading the bind-mounted
+    # podman.sock — the agent's docker/podman CLI can't perform OTAs.
+    userns_mode: keep-id
     depends_on:
       mqtt:
         condition: service_healthy
@@ -64,9 +89,15 @@ services:
       - go-cache:/var/cache/go-build
       - go-mod:/var/cache/go-mod
       - ${CONTAINER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+    # build-essential: cgo for go-sqlite3.
+    # docker.io + podman: install both CLIs at startup; the agent's
+    # OTA executor auto-detects which one is on PATH (docker first,
+    # then podman). Either binary will route through the mounted
+    # CONTAINER_SOCK (docker is REST-compatible with podman, and
+    # podman natively talks to its own socket).
     command: >
       bash -c "
-        apt-get update -qq && apt-get install -y -qq build-essential >/dev/null &&
+        apt-get update -qq && apt-get install -y -qq build-essential docker.io podman >/dev/null &&
         cd /src/agent &&
         CGO_ENABLED=1 go run ./cmd/agent
       "
