@@ -18,6 +18,10 @@ ENV TURTLEBOT3_MODEL=burger
 ENV ROS_DOMAIN_ID=42
 
 # TurtleBot3 + Gazebo bindings + Python build essentials for the bridge.
+# Also Xvfb + x11vnc + noVNC + a minimal WM so the Gazebo GUI can be
+# served over a browser-accessible VNC port. This is the standard
+# trick for "sim with GUI on macOS / Windows / headless Linux without
+# X11 forwarding".
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-turtlebot3 \
         ros-humble-turtlebot3-gazebo \
@@ -27,6 +31,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
         python3-grpcio \
         python3-grpc-tools \
+        xvfb \
+        x11vnc \
+        novnc \
+        websockify \
+        fluxbox \
+        net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Use Cyclone DDS — slightly more reliable defaults for sim than Fast DDS.
@@ -49,5 +59,9 @@ RUN chmod +x /entrypoint.sh
 # Bridge listens on a host-mounted socket so the agent (sibling
 # container) can attach. See installer/docker-compose/docker-compose.sim.yml.
 VOLUME ["/run/bridge"]
+
+# noVNC (browser GUI):  http://localhost:14680
+# Raw VNC (any client): localhost:14900
+EXPOSE 5900 6080
 
 ENTRYPOINT ["/entrypoint.sh"]

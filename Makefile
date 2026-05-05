@@ -195,9 +195,19 @@ lab-reset: container-check ## Wipe lab state and restart
 # =============================================================================
 
 .PHONY: sim-up
-sim-up: container-check ## Bring up the lab stack + a Gazebo robot sim with bridge + agent
+sim-up: container-check ## Bring up the lab stack + a Gazebo robot sim (GUI on :14680) + agent
 	@echo "[$(CONTAINER_ENGINE)] bringing up sim stack via '$(COMPOSE)'"
 	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) \
+	  $(COMPOSE) -p $(LAB_PROJECT) -f docker-compose.yml -f docker-compose.sim.yml up -d --build
+	@echo
+	@echo "  Gazebo GUI:  http://localhost:14680/vnc.html?autoconnect=1"
+	@echo "  Raw VNC:     localhost:14900  (no password)"
+	@echo "  Tail logs:   make sim-logs"
+
+.PHONY: sim-up-headless
+sim-up-headless: container-check ## Same as sim-up, but no GUI (gzserver only)
+	@echo "[$(CONTAINER_ENGINE)] bringing up sim stack (headless) via '$(COMPOSE)'"
+	cd installer/docker-compose && CONTAINER_SOCK=$(CONTAINER_SOCK) SIM_HEADLESS=1 \
 	  $(COMPOSE) -p $(LAB_PROJECT) -f docker-compose.yml -f docker-compose.sim.yml up -d --build
 
 .PHONY: sim-down
@@ -209,6 +219,14 @@ sim-down: container-check ## Tear down the lab stack + sim
 sim-logs: container-check ## Tail logs from sim + agent
 	cd installer/docker-compose && \
 	  $(COMPOSE) -p $(LAB_PROJECT) -f docker-compose.yml -f docker-compose.sim.yml logs -f sim agent
+
+.PHONY: sim-gui
+sim-gui: ## Open the Gazebo GUI in the default browser
+	@URL="http://localhost:14680/vnc.html?autoconnect=1&resize=remote"; \
+	 echo "$$URL"; \
+	 (command -v open  >/dev/null && open  "$$URL") || \
+	 (command -v xdg-open >/dev/null && xdg-open "$$URL") || \
+	 echo "Open it manually."
 
 # =============================================================================
 # CI cluster (smoke / pre-push parity) — alternate ports so it can run
