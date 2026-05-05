@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <!--
-  Hand-authored moon world for Gazebo Harmonic.
+  Hand-authored moon world for Gazebo Fortress.
   Lunar gravity, black sky, low ambient, single sun. A lightly-bumpy
   gray ground plane plus a scattering of primitive "rocks" (ellipsoids).
-  Includes the Ingenuity model from /opt/sim/models so the helicopter
-  is visible at startup.
+  Includes the Perseverance rover from /opt/sim/models so it is
+  visible at startup.
 
   This is the fast-path stand-in for the procedurally-generated
   AndrejOrsula/space_robotics_gz_envs moon.sdf. The procgen path
@@ -105,11 +105,11 @@
         <material><ambient>0.18 0.17 0.16 1</ambient><diffuse>0.36 0.34 0.32 1</diffuse></material></visual></link>
     </model>
 
-    <!-- Ingenuity helicopter (model lives at /opt/sim/models/ingenuity) -->
+    <!-- Perseverance rover (model lives at /opt/sim/models/perseverance) -->
     <include>
-      <uri>model://ingenuity</uri>
-      <name>ingenuity</name>
-      <pose>0 0 0.20 0 0 0</pose>
+      <uri>model://perseverance</uri>
+      <name>perseverance</name>
+      <pose>0 0 0 0 0 0</pose>
     </include>
   </world>
 </sdf>
