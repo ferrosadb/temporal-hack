@@ -19,6 +19,7 @@ build: build-cloud build-agent ## Build all Go binaries
 build-cloud:
 	cd cloud && go build -o ../bin/controlplane ./cmd/controlplane
 	cd cloud && go build -o ../bin/telemetry-ingest ./cmd/telemetry-ingest
+	cd cloud && go build -o ../bin/ota-worker ./cmd/ota-worker
 
 .PHONY: build-agent
 build-agent:
@@ -70,3 +71,18 @@ lab-status: ## Probe lab services
 lab-reset: ## Wipe lab state and restart
 	cd installer/docker-compose && docker compose down -v
 	$(MAKE) lab-up
+
+.PHONY: sim-up
+sim-up: ## Bring up the lab stack + a Gazebo robot sim with bridge + agent
+	cd installer/docker-compose && \
+	  docker compose -f docker-compose.yml -f docker-compose.sim.yml up -d --build
+
+.PHONY: sim-down
+sim-down: ## Tear down the lab stack + sim
+	cd installer/docker-compose && \
+	  docker compose -f docker-compose.yml -f docker-compose.sim.yml down
+
+.PHONY: sim-logs
+sim-logs: ## Tail logs from sim + agent
+	cd installer/docker-compose && \
+	  docker compose -f docker-compose.yml -f docker-compose.sim.yml logs -f sim agent

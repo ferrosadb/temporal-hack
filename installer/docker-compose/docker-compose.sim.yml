@@ -1,0 +1,53 @@
+# Sim overlay: brings up one virtual robot — Gazebo + TurtleBot3 +
+# the bridge node — and an agent container that consumes the bridge's
+# gRPC stream and reports to the lab MQTT broker.
+#
+# Use:
+#   make sim-up      # builds and starts sim + agent
+#   make sim-down    # tears down
+#
+# Compose this with the main lab stack:
+#   docker compose -f docker-compose.yml -f docker-compose.sim.yml up -d
+services:
+  sim:
+    build:
+      # Build context is the repo root so the bridge/ tree can be COPY'd.
+      context: ../..
+      dockerfile: docker/sim/Dockerfile
+    image: temporal-hack/sim:dev
+    environment:
+      TURTLEBOT3_MODEL: burger
+      ROS_DOMAIN_ID: 42
+      HEADLESS: "1"
+      BRIDGE_SOCKET: /run/bridge/temporal-hack-bridge.sock
+    volumes:
+      - bridge-sock:/run/bridge
+
+  agent:
+    image: golang:1.22-bookworm
+    depends_on:
+      - mqtt
+      - sim
+    working_dir: /src/agent
+    environment:
+      ROBOT_ID: sim-robot-01
+      BROKER_URL: tcp://mqtt:1883
+      BUFFER_PATH: /var/lib/agent/buffer.db
+      BRIDGE_ADDR: unix:///run/bridge/temporal-hack-bridge.sock
+    volumes:
+      - ../..:/src:ro
+      - bridge-sock:/run/bridge
+      - agent-data:/var/lib/agent
+      # Agent needs the docker socket on the host to perform OTA. In
+      # production this is the robot's own docker. For sim we mount
+      # the host docker so a rollout can swap a sibling container.
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      bash -c "
+        cd /src/agent &&
+        go run ./cmd/agent
+      "
+
+volumes:
+  bridge-sock:
+  agent-data:

@@ -23,6 +23,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ../../deploy/postgres/init-temporal.sql:/docker-entrypoint-initdb.d/01-temporal.sql:ro
       - ../../deploy/postgres/init-telemetry.sql:/docker-entrypoint-initdb.d/02-telemetry.sql:ro
+      - ../../deploy/postgres/init-ota.sql:/docker-entrypoint-initdb.d/03-ota.sql:ro
     # We want timescaledb but the official image is timescale/timescaledb;
     # use it instead in installations that need hypertables.
     # For lab simplicity we keep stock postgres; the init script will

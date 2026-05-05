@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package temporal_hack.ota;
+
+option go_package = "github.com/example/temporal-hack/cloud/internal/ota/pb";
+
+import "google/protobuf/timestamp.proto";
+
+// MQTT topic conventions for OTA:
+//
+//   cmd/{robot_id}/ota   — cloud → robot, publishes OTACommand
+//   ack/{robot_id}/ota   — robot → cloud, publishes OTAAck
+//
+// Both are QoS 1 with retain=false. Persistent sessions on the broker
+// guarantee delivery across reconnect.
+
+// OTACommand instructs a robot to swap to a new container image.
+// Issued once per robot per rollout. The robot is responsible for:
+//   1. Pulling image_ref from the registry
+//   2. Stopping the current container, recording its digest as
+//      previous_image_digest in subsequent acks
+//   3. Starting the new container with the same configuration
+//   4. Running smoke_check and reporting result
+//   5. Rolling back to previous image if any step fails
+message OTACommand {
+  string rollout_id = 1;
+  string robot_id = 2;
+  string image_ref = 3;        // e.g. "registry.local:5000/robot-app:1.4.2"
+  string image_digest = 4;     // expected digest after pull (sha256:...)
+  uint32 smoke_timeout_sec = 5;
+  string smoke_command = 6;    // executed inside the new container
+  bool force = 7;              // ignore "already at this digest" idempotence
+}
+
+// OTAAck reports the robot's progress through an OTA. Robots emit
+// multiple OTAAck messages per command — one per phase transition.
+message OTAAck {
+  string rollout_id = 1;
+  string robot_id = 2;
+  Phase phase = 3;
+  google.protobuf.Timestamp at = 4;
+  string image_digest = 5;     // currently-running digest after this phase
+  string previous_image_digest = 6;
+  string detail = 7;           // free text on failure / informational
+}
+
+enum Phase {
+  PHASE_UNKNOWN = 0;
+  PHASE_RECEIVED = 1;
+  PHASE_PULLED = 2;
+  PHASE_SWAPPED = 3;
+  PHASE_HEALTHY = 4;
+  PHASE_FAILED = 5;
+  PHASE_ROLLED_BACK = 6;
+}

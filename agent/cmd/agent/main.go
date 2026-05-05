@@ -10,6 +10,7 @@ import (
 
 	"github.com/example/temporal-hack/agent/internal/buffer"
 	"github.com/example/temporal-hack/agent/internal/mqttx"
+	"github.com/example/temporal-hack/agent/internal/ota"
 	"github.com/example/temporal-hack/agent/internal/telemetry"
 )
 
@@ -84,7 +85,19 @@ func main() {
 		Logger:     logger,
 	})
 
+	exec := &ota.Executor{
+		RobotID: cfg.robotID,
+		MQTT:    pub.Client(),
+		Docker:  ota.NewDockerCLI(),
+		Logger:  logger,
+	}
+
 	logger.Info("agent starting", "robot_id", cfg.robotID, "broker", cfg.brokerURL)
+	go func() {
+		if err := exec.Start(ctx); err != nil && ctx.Err() == nil {
+			logger.Error("ota executor exited", "err", err)
+		}
+	}()
 	if err := pump.Run(ctx); err != nil && ctx.Err() == nil {
 		logger.Error("pump exited", "err", err)
 		os.Exit(1)

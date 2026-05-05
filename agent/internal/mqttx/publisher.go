@@ -88,6 +88,10 @@ func (p *Publisher) IsConnected() bool {
 	return p.cli.IsConnectionOpen()
 }
 
+// Client exposes the underlying paho client so other agent components
+// (the OTA executor) can register subscriptions on the same session.
+func (p *Publisher) Client() mqtt.Client { return p.cli }
+
 func (p *Publisher) Close() {
 	p.cli.Disconnect(250)
 }

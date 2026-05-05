@@ -55,7 +55,52 @@ back to a stub source when the bridge is unreachable.
 | Sprint | Theme | Status |
 |--------|-------|--------|
 | S0 | Foundations + installer | scaffolding landed; needs hands-on lab bring-up verification |
-| S1 | Telemetry plumbing | agent + ingester wired through MQTT; bridge stubbed |
+| S1 | Telemetry plumbing | agent + ingester wired through MQTT; sim container exercises bridge end-to-end |
 | S2 | Telemetry MVP | TSDB integration + read API present; durability test pending |
+| S3–S4 | OTA workflow + swap + rollback | Temporal workflows + agent executor + MQTT command bridge landed |
 
 See [`specs/project-plan.md`](specs/project-plan.md) for the full plan.
+
+## Sim quickstart
+
+A Gazebo sim container with TurtleBot3 + the bridge + a synthetic
+battery publisher is included as a sibling stack. The agent runs as
+its own container, consumes the bridge's gRPC stream, and reports to
+the lab MQTT broker.
+
+```bash
+make sim-up      # builds + starts lab + sim + agent
+make sim-logs    # tail sim and agent
+make sim-down
+```
+
+The image is large (~3-4 GB) because Gazebo + ROS 2 desktop pulls in
+a lot. First build takes 10–20 min on a clean cache.
+
+## OTA quickstart
+
+With the lab + sim up:
+
+```bash
+# Push an image to the lab registry
+docker tag busybox:latest localhost:5000/robot-app:v1
+docker push localhost:5000/robot-app:v1
+
+# Run the OTA worker (separate terminal)
+./bin/ota-worker
+
+# Run the control plane (separate terminal)
+./bin/controlplane
+
+# Start a rollout
+curl -X POST http://localhost:8081/v1/ota/rollouts \
+  -H "content-type: application/json" \
+  -d '{
+    "image_ref": "localhost:5000/robot-app:v1",
+    "smoke_command": "true",
+    "cohort_selector": {"robot_ids": ["sim-robot-01"]}
+  }'
+
+# Watch progress
+curl -s http://localhost:8081/v1/ota/rollouts | jq
+```

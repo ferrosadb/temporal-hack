@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.temporal.io/sdk/client"
+
 	"github.com/example/temporal-hack/cloud/internal/api"
 	"github.com/example/temporal-hack/cloud/internal/store"
 )
@@ -19,6 +21,7 @@ func main() {
 
 	addr := envOr("LISTEN_ADDR", ":8081")
 	tsdbDSN := envOr("TSDB_DSN", "postgres://temporal:temporal@localhost:5432/telemetry?sslmode=disable")
+	temporalAddr := envOr("TEMPORAL_ADDR", "localhost:7233")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -30,9 +33,18 @@ func main() {
 	}
 	defer tsdb.Close()
 
+	var otaDeps *api.OTADeps
+	tcli, terr := client.Dial(client.Options{HostPort: temporalAddr})
+	if terr != nil {
+		logger.Warn("temporal client unavailable; OTA routes disabled", "err", terr)
+	} else {
+		defer tcli.Close()
+		otaDeps = &api.OTADeps{Temporal: tcli}
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(api.Deps{TSDB: tsdb, Logger: logger}),
+		Handler:           api.NewRouter(api.Deps{TSDB: tsdb, Logger: logger}, otaDeps),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

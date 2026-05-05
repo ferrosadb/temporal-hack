@@ -15,23 +15,28 @@ type Deps struct {
 	Logger *slog.Logger
 }
 
-// NewRouter wires the v1 read-side API used by the operator dashboard.
-// v1 surface (S2 deliverable):
+// NewRouter wires the v1 control-plane HTTP API. OTA routes are
+// optional and are attached only when the temporal client is wired
+// (the controlplane main passes nil OTADeps when running without
+// Temporal access; in that mode the OTA endpoints 404).
 //
-//	GET /healthz                     liveness
-//	GET /v1/robots                   list robots seen via heartbeats
-//	GET /v1/robots/{id}/telemetry    recent samples (paginated by ts)
-//
-// The control plane has no write surface in S2 beyond what telemetry-
-// ingest writes directly to TSDB. Mission dispatch and OTA APIs land
-// in S3+.
-func NewRouter(d Deps) http.Handler {
+//	GET    /healthz                          liveness
+//	GET    /v1/robots                        list robots seen via heartbeats
+//	GET    /v1/robots/{id}/telemetry         recent samples
+//	POST   /v1/ota/rollouts                  start a rollout
+//	GET    /v1/ota/rollouts                  list rollouts
+//	GET    /v1/ota/rollouts/{id}             rollout summary
+//	POST   /v1/ota/rollouts/{id}/abort       cancel a rollout
+func NewRouter(d Deps, ota *OTADeps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("GET /v1/robots", d.listRobots)
 	mux.HandleFunc("GET /v1/robots/{id}/telemetry", d.recentTelemetry)
+	if ota != nil {
+		d.AttachOTARoutes(mux, *ota)
+	}
 	return mux
 }
 

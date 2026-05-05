@@ -30,6 +30,10 @@ func OpenTimescale(ctx context.Context, dsn string) (*Timescale, error) {
 
 func (t *Timescale) Close() { t.pool.Close() }
 
+// Pool exposes the underlying pgxpool for callers that need direct
+// access (e.g., the fleet registry runs its own queries).
+func (t *Timescale) Pool() *pgxpool.Pool { return t.pool }
+
 // InsertSample writes one telemetry sample. Called by the
 // telemetry-ingest worker that subscribes to MQTT.
 func (t *Timescale) InsertSample(ctx context.Context, robotID, stream string, capturedAt time.Time, payload []byte, schema string) error {
