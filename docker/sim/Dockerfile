@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         ros-humble-rmw-cyclonedds-cpp \
         ros-humble-sensor-msgs \
+        ros-humble-ros-gz-bridge \
         ignition-fortress \
         libgl1-mesa-dri \
         libgl1-mesa-glx \
