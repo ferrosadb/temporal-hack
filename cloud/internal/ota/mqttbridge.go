@@ -20,9 +20,9 @@ import (
 // SignalWorkflow on a closed/non-existent execution returns
 // "workflow execution not found" which we log and drop.
 type MQTTBridge struct {
-	MQTT       mqtt.Client
-	Temporal   client.Client
-	Logger     *slog.Logger
+	MQTT     mqtt.Client
+	Temporal client.Client
+	Logger   *slog.Logger
 }
 
 // Start subscribes and runs until the context is canceled.
@@ -46,11 +46,11 @@ func (b *MQTTBridge) onMessage(ctx context.Context) mqtt.MessageHandler {
 		robotID := parts[1]
 
 		var ack struct {
-			RolloutID            string `json:"rollout_id"`
-			Phase                string `json:"phase"`
-			Detail               string `json:"detail"`
-			ImageDigest          string `json:"image_digest"`
-			PreviousImageDigest  string `json:"previous_image_digest"`
+			RolloutID           string `json:"rollout_id"`
+			Phase               string `json:"phase"`
+			Detail              string `json:"detail"`
+			ImageDigest         string `json:"image_digest"`
+			PreviousImageDigest string `json:"previous_image_digest"`
 		}
 		if err := json.Unmarshal(msg.Payload(), &ack); err != nil {
 			b.Logger.Warn("ack unmarshal", "err", err, "topic", topic)

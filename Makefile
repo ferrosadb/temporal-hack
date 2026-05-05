@@ -109,6 +109,54 @@ build-cloud:
 	cd cloud && go build -o ../bin/controlplane ./cmd/controlplane
 	cd cloud && go build -o ../bin/telemetry-ingest ./cmd/telemetry-ingest
 	cd cloud && go build -o ../bin/ota-worker ./cmd/ota-worker
+	cd cloud && go build -o ../bin/collision-worker ./cmd/collision-worker
+
+# =============================================================================
+# Workflow workers — host-side Go binaries that connect to the lab
+# Temporal frontend + MQTT broker. Without these running, the
+# Temporal UI shows no Workers / no in-flight Workflows.
+# =============================================================================
+
+WORKER_TEMPORAL_ADDR ?= localhost:14733
+WORKER_BROKER_URL   ?= tcp://localhost:14883
+WORKER_TSDB_DSN     ?= postgres://temporal:temporal@localhost:14432/telemetry?sslmode=disable
+
+.PHONY: workers-up
+workers-up: build-cloud ## Start ota-worker + collision-worker in the background
+	@mkdir -p .run
+	@TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) BROKER_URL=$(WORKER_BROKER_URL) \
+	  TSDB_DSN="$(WORKER_TSDB_DSN)" \
+	  nohup ./bin/ota-worker > .run/ota-worker.log 2>&1 & echo $$! > .run/ota-worker.pid
+	@TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) BROKER_URL=$(WORKER_BROKER_URL) \
+	  nohup ./bin/collision-worker > .run/collision-worker.log 2>&1 & echo $$! > .run/collision-worker.pid
+	@sleep 1
+	@echo "ota-worker        PID $$(cat .run/ota-worker.pid 2>/dev/null)        log .run/ota-worker.log"
+	@echo "collision-worker  PID $$(cat .run/collision-worker.pid 2>/dev/null)  log .run/collision-worker.log"
+
+.PHONY: workers-down
+workers-down: ## Stop the workflow workers
+	@for f in .run/ota-worker.pid .run/collision-worker.pid; do \
+	  [ -f $$f ] && kill "$$(cat $$f)" 2>/dev/null && rm -f $$f && echo "stopped $$f" || true; \
+	done
+
+.PHONY: workers-status
+workers-status: ## Show status of running workflow workers
+	@for n in ota-worker collision-worker; do \
+	  pid="$$(cat .run/$$n.pid 2>/dev/null || echo '')"; \
+	  if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then \
+	    echo "$$n: running (pid $$pid)"; \
+	  else \
+	    echo "$$n: not running"; \
+	  fi; \
+	done
+
+# Publish a fake collision event to trigger a CollisionResponse workflow.
+# Uses the lab broker directly via the robot container's paho client.
+.PHONY: collide
+collide: ## Publish a fake collision event for sim-robot-01 (triggers Temporal workflow)
+	@$(CONTAINER_ENGINE) exec temporal-hack-lab-robot-1 python3 -c \
+	  "import paho.mqtt.publish as p, time, json; p.single('events/sim-robot-01/collision', json.dumps({'robot_id':'sim-robot-01','at':time.time(),'count':1,'partner':'manual-trigger'}), hostname='mqtt', port=1883, qos=1)"
+	@echo "published events/sim-robot-01/collision; check Temporal UI for collision-* workflow"
 
 .PHONY: build-agent
 build-agent:

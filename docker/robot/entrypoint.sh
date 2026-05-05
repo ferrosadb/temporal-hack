@@ -16,11 +16,23 @@ shutdown() {
 }
 trap shutdown SIGINT SIGTERM
 
-# sim_battery is a stand-in /battery_state publisher (Gazebo doesn't
+# sim_battery: stand-in /battery_state publisher (Gazebo doesn't
 # emit one for our model). Real robots publish their own; this is
 # only present in the dev sim.
 echo "[robot] starting sim_battery"
 python3 -m bridge_node.sim_battery &
+PIDS+=($!)
+
+# collision_publisher: ROS /contacts -> MQTT events/{robot_id}/collision.
+# The cloud's CollisionResponse workflow listens on the MQTT side.
+echo "[robot] starting collision_publisher"
+python3 -m bridge_node.collision_publisher &
+PIDS+=($!)
+
+# twist_subscriber: MQTT cmd/{robot_id}/twist -> ROS /cmd_vel.
+# The cloud workflow publishes Twist messages here to drive the rover.
+echo "[robot] starting twist_subscriber"
+python3 -m bridge_node.twist_subscriber &
 PIDS+=($!)
 
 echo "[robot] starting bridge gRPC on $LISTEN"

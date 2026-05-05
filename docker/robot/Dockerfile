@@ -21,9 +21,12 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-rmw-cyclonedds-cpp \
         ros-humble-sensor-msgs \
+        ros-humble-ros-gz-interfaces \
+        ros-humble-geometry-msgs \
         python3-pip \
         python3-grpcio \
         python3-grpc-tools \
+        python3-paho-mqtt \
     && rm -rf /var/lib/apt/lists/*
 
 # Bridge package (rclpy → gRPC) and sim_battery publisher.
