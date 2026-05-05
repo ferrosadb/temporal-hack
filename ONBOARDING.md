@@ -338,7 +338,7 @@ First build is 10–20 minutes; subsequent builds are minutes.
 
 The Gazebo GUI is exposed over noVNC, so it works in any browser
 (Safari, Chrome, Firefox) without X11 setup:
-- `http://localhost:14680/vnc.html?autoconnect=1` — browser GUI
+- `http://localhost:14680/vnc.html?autoconnect=1&resize=scale` — browser GUI
 - `localhost:14900` — raw VNC for native clients
 
 ---

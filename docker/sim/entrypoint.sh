@@ -12,7 +12,7 @@ BRIDGE_SOCKET="${BRIDGE_SOCKET:-/run/bridge/temporal-hack-bridge.sock}"
 HEADLESS="${HEADLESS:-0}"   # default 0: show the GUI via noVNC.
                              # Set HEADLESS=1 to skip the X stack entirely.
 DISPLAY_NUM="${DISPLAY_NUM:-1}"
-SCREEN_GEOMETRY="${SCREEN_GEOMETRY:-1280x800x24}"
+SCREEN_GEOMETRY="${SCREEN_GEOMETRY:-1920x1200x24}"
 
 mkdir -p "$(dirname "$BRIDGE_SOCKET")"
 
@@ -64,10 +64,10 @@ else
     PIDS+=($!)
 
     echo
-    echo "  ┌────────────────────────────────────────────────────────────┐"
-    echo "  │  Gazebo GUI:  http://localhost:14680/vnc.html?autoconnect=1│"
-    echo "  │  Raw VNC:     localhost:14900   (no password)              │"
-    echo "  └────────────────────────────────────────────────────────────┘"
+    echo "  ┌──────────────────────────────────────────────────────────────────────────────┐"
+    echo "  │  Gazebo GUI:  http://localhost:14680/vnc.html?autoconnect=1&resize=scale     │"
+    echo "  │  Raw VNC:     localhost:14900   (no password)                                │"
+    echo "  └──────────────────────────────────────────────────────────────────────────────┘"
     echo
 fi
 
