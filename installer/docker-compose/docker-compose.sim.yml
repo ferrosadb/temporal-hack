@@ -47,10 +47,20 @@ services:
       BROKER_URL: tcp://mqtt:1883
       BUFFER_PATH: /var/lib/agent/buffer.db
       BRIDGE_ADDR: unix:///run/bridge/temporal-hack-bridge.sock
+      # The repo is bind-mounted read-only. Go's workspace mode tries
+      # to update go.work.sum on `go run` and fails; turn the workspace
+      # off so the agent module's own go.mod/go.sum are authoritative.
+      GOWORK: "off"
+      # Use a writable cache dir; module cache and build cache go to a
+      # named volume so we don't fight the read-only bind mount.
+      GOCACHE: /var/cache/go-build
+      GOMODCACHE: /var/cache/go-mod
     volumes:
       - ../..:/src:ro
       - bridge-sock:/run/bridge
       - agent-data:/var/lib/agent
+      - go-cache:/var/cache/go-build
+      - go-mod:/var/cache/go-mod
       # Agent needs the container-runtime socket on the host to
       # perform OTA. CONTAINER_SOCK is supplied by the Makefile at
       # compose time (resolves to docker.sock or podman.sock).
@@ -66,3 +76,5 @@ services:
 volumes:
   bridge-sock:
   agent-data:
+  go-cache:
+  go-mod:
