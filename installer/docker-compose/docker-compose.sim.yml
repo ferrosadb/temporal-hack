@@ -1,13 +1,15 @@
 # Sim overlay: brings up one virtual robot — Gazebo + TurtleBot3 +
 # the bridge node — and an agent container that consumes the bridge's
-# gRPC stream and reports to the lab MQTT broker.
+# gRPC stream and reports telemetry to the lab MQTT broker.
 #
-# Use:
-#   make sim-up      # builds and starts sim + agent
-#   make sim-down    # tears down
+# Composed on top of docker-compose.yml under the same project name,
+# so the sim and lab containers share a network and the agent can
+# reach the broker at `mqtt:1883` (container-internal port — never
+# the host-side port mapping).
 #
-# Compose this with the main lab stack:
-#   docker compose -f docker-compose.yml -f docker-compose.sim.yml up -d
+# Use:  make sim-up   (lab cluster + sim + agent)
+#       make sim-down
+#       make sim-logs
 services:
   sim:
     build:
@@ -26,11 +28,15 @@ services:
   agent:
     image: golang:1.22-bookworm
     depends_on:
-      - mqtt
-      - sim
+      mqtt:
+        condition: service_healthy
+      sim:
+        condition: service_started
     working_dir: /src/agent
     environment:
       ROBOT_ID: sim-robot-01
+      # mqtt and sim are sibling services on the same Compose network;
+      # the agent uses the canonical container-internal ports.
       BROKER_URL: tcp://mqtt:1883
       BUFFER_PATH: /var/lib/agent/buffer.db
       BRIDGE_ADDR: unix:///run/bridge/temporal-hack-bridge.sock
@@ -38,16 +44,16 @@ services:
       - ../..:/src:ro
       - bridge-sock:/run/bridge
       - agent-data:/var/lib/agent
-      # Agent needs the container-runtime socket on the host to perform
-      # OTA. In production this is the robot's own daemon. For sim we
-      # mount the host's docker or podman socket so a rollout can swap
-      # a sibling container. CONTAINER_SOCK is supplied by the Makefile
-      # at compose time (resolves to docker.sock or podman.sock).
+      # Agent needs the container-runtime socket on the host to
+      # perform OTA. CONTAINER_SOCK is supplied by the Makefile at
+      # compose time (resolves to docker.sock or podman.sock).
       - ${CONTAINER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+    # apt is needed to install the C toolchain for go-sqlite3 (cgo).
     command: >
       bash -c "
+        apt-get update -qq && apt-get install -y -qq build-essential >/dev/null &&
         cd /src/agent &&
-        go run ./cmd/agent
+        CGO_ENABLED=1 go run ./cmd/agent
       "
 
 volumes:

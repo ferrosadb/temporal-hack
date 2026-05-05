@@ -88,14 +88,23 @@ test: ## Run unit tests
 	cd agent && go test -race -count=1 ./...
 
 .PHONY: proto
-proto: ## Regenerate protobuf bindings
-	@command -v protoc >/dev/null || { echo "protoc not installed"; exit 1; }
-	protoc \
-		--go_out=. --go_opt=module=github.com/example/temporal-hack \
-		--go-grpc_out=. --go-grpc_opt=module=github.com/example/temporal-hack \
-		--python_out=bridge \
-		--grpc_python_out=bridge \
-		proto/*.proto
+proto: container-check ## Regenerate Go + Python protobuf bindings via containerized protoc
+	@echo "[$(CONTAINER_ENGINE)] generating Go bindings"
+	$(CONTAINER_ENGINE) run --rm -v "$(PWD)":/work -w /work \
+	  rvolosatovs/protoc:4.0.0 \
+	  -I=. \
+	  --go_out=. --go_opt=module=github.com/example/temporal-hack \
+	  --go-grpc_out=. --go-grpc_opt=module=github.com/example/temporal-hack \
+	  proto/agent_bridge.proto proto/telemetry.proto proto/ota.proto
+	@echo "[$(CONTAINER_ENGINE)] generating Python bindings"
+	$(CONTAINER_ENGINE) run --rm --entrypoint sh \
+	  -v "$(PWD)":/work -w /work \
+	  python:3.11-slim \
+	  -c "pip install --quiet grpcio-tools && python -m grpc_tools.protoc -I=. --python_out=bridge/bridge_node/proto --grpc_python_out=bridge/bridge_node/proto proto/agent_bridge.proto proto/telemetry.proto proto/ota.proto"
+	@echo "fixing python relative imports"
+	@for f in bridge/bridge_node/proto/*.py; do \
+	  python3 -c "import re,sys; p=sys.argv[1]; s=open(p).read(); s=re.sub(r'^from proto import (\w+_pb2)', r'from . import \1', s, flags=re.M); open(p,'w').write(s)" "$$f"; \
+	done
 
 # =============================================================================
 # Lab cluster (dev / validation) — default ports in the 14xxx range so

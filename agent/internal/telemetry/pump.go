@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/example/temporal-hack/agent/internal/bridge"
 	"github.com/example/temporal-hack/agent/internal/buffer"
 	"github.com/example/temporal-hack/agent/internal/mqttx"
 )
@@ -53,29 +54,31 @@ func (p *Pump) Run(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// runIngest will: dial the bridge gRPC server, call Subscribe with the
-// configured streams, and append every TopicEvent it receives to the
-// buffer as a Sample. Reconnect on disconnect.
-//
-// TODO(S1): wire up bridge gRPC client. For now the loop is a stub
-// that emits a fake "battery" sample every 5s so end-to-end can be
-// exercised without the bridge running.
+// runIngest dials the bridge gRPC server (via the agent/internal/bridge
+// client, which handles reconnect) and appends each TopicEvent into
+// the local buffer as a Sample. The bridge is the only on-robot
+// process that touches ROS / DDS — see ADR-004 and D-06.
 func (p *Pump) runIngest(ctx context.Context) error {
-	t := time.NewTicker(5 * time.Second)
-	defer t.Stop()
-	var seq uint64
+	cli := bridge.New(p.cfg.BridgeAddr, p.cfg.Logger)
+	events := cli.Subscribe(ctx, p.cfg.Streams)
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-t.C:
-			seq++
+		case ev, ok := <-events:
+			if !ok {
+				return nil
+			}
+			capturedNanos := ev.CapturedAt.UnixNano()
+			if capturedNanos <= 0 {
+				capturedNanos = time.Now().UnixNano()
+			}
 			s := buffer.Sample{
 				RobotID:    p.cfg.RobotID,
-				Stream:     "battery",
-				CapturedAt: time.Now().UnixNano(),
-				Payload:    []byte(fmt.Sprintf(`{"voltage_v":24.%d,"seq":%d}`, seq%10, seq)),
-				Schema:     "stub:battery@v0",
+				Stream:     ev.Stream,
+				CapturedAt: capturedNanos,
+				Payload:    ev.Payload,
+				Schema:     ev.Schema,
 			}
 			if err := p.cfg.Buffer.Append(s); err != nil {
 				p.cfg.Logger.Error("buffer append", "err", err)
@@ -83,6 +86,8 @@ func (p *Pump) runIngest(ctx context.Context) error {
 		}
 	}
 }
+
+var _ = fmt.Sprintf // retained for log strings elsewhere
 
 // runPublish drains the buffer to MQTT in FIFO order. On publish
 // failure, the sample stays in the buffer and the loop backs off.
