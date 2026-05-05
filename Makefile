@@ -158,6 +158,86 @@ collide: ## Publish a fake collision event for sim-robot-01 (triggers Temporal w
 	  "import paho.mqtt.publish as p, time, json; p.single('events/sim-robot-01/collision', json.dumps({'robot_id':'sim-robot-01','at':time.time(),'count':1,'partner':'manual-trigger'}), hostname='mqtt', port=1883, qos=1)"
 	@echo "published events/sim-robot-01/collision; check Temporal UI for collision-* workflow"
 
+# =============================================================================
+# Control plane (HTTP API for OTA rollouts) — host-side binary, not in
+# compose. Required to start a rollout via /v1/ota/rollouts. Same
+# pattern as workers-up / workers-down.
+# =============================================================================
+
+CP_LISTEN_ADDR ?= :8081
+
+.PHONY: controlplane-up
+controlplane-up: build-cloud ## Start the control plane HTTP API in the background
+	@mkdir -p .run
+	@LISTEN_ADDR=$(CP_LISTEN_ADDR) \
+	  TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) \
+	  TSDB_DSN="$(WORKER_TSDB_DSN)" \
+	  nohup ./bin/controlplane > .run/controlplane.log 2>&1 & echo $$! > .run/controlplane.pid
+	@sleep 1
+	@echo "controlplane      PID $$(cat .run/controlplane.pid 2>/dev/null)      log .run/controlplane.log"
+	@echo "  POST http://localhost$(CP_LISTEN_ADDR)/v1/ota/rollouts to start an OTA"
+
+.PHONY: controlplane-down
+controlplane-down: ## Stop the control plane API
+	@[ -f .run/controlplane.pid ] && kill "$$(cat .run/controlplane.pid)" 2>/dev/null && rm -f .run/controlplane.pid && echo "stopped controlplane" || true
+
+.PHONY: controlplane-status
+controlplane-status: ## Show control plane status
+	@pid="$$(cat .run/controlplane.pid 2>/dev/null || echo '')"; \
+	 if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then \
+	   echo "controlplane: running (pid $$pid) at http://localhost$(CP_LISTEN_ADDR)"; \
+	 else echo "controlplane: not running"; fi
+
+# =============================================================================
+# OTA demo helpers — build the controller image, push it to the lab
+# registry, fire a rollout. One command per controller.
+# =============================================================================
+
+OTA_REGISTRY    ?= localhost:14050
+OTA_ROBOT_ID    ?= sim-robot-01
+OTA_CP_HOST     ?= http://localhost:8081
+
+# Internal: build + push a single controller. Args: $(1)=name (matches sim/controllers/<name>),
+# $(2)=tag suffix.
+define _ota_build_push
+	@echo "[ota] building sim/controllers/$(1) → $(OTA_REGISTRY)/robot-app:$(2)"
+	$(CONTAINER_ENGINE) build \
+	  -t $(OTA_REGISTRY)/robot-app:$(2) \
+	  -f sim/controllers/$(1)/Dockerfile \
+	  sim/controllers/$(1)
+	$(CONTAINER_ENGINE) push --tls-verify=false $(OTA_REGISTRY)/robot-app:$(2)
+endef
+
+# Internal: POST a rollout for the given image tag.
+define _ota_rollout
+	@echo "[ota] starting rollout for $(OTA_REGISTRY)/robot-app:$(1) on $(OTA_ROBOT_ID)"
+	@curl -sS -X POST $(OTA_CP_HOST)/v1/ota/rollouts \
+	  -H "content-type: application/json" \
+	  -d '{ \
+	    "image_ref": "$(OTA_REGISTRY)/robot-app:$(1)", \
+	    "smoke_command": "true", \
+	    "smoke_timeout_sec": 10, \
+	    "cohort_selector": {"robot_ids": ["$(OTA_ROBOT_ID)"]} \
+	  }' && echo
+endef
+
+.PHONY: ota-circle
+ota-circle: ## Build, push, and OTA-roll the drive-circle controller
+	$(call _ota_build_push,drive-circle,circle-v1)
+	$(call _ota_rollout,circle-v1)
+	@echo "watch the rover at http://localhost:14680 — should start driving in a circle"
+	@echo "rollout status:   curl -s $(OTA_CP_HOST)/v1/ota/rollouts | jq"
+
+.PHONY: ota-figure-eight
+ota-figure-eight: ## Build, push, and OTA-roll the drive-figure-eight controller
+	$(call _ota_build_push,drive-figure-eight,figure-eight-v1)
+	$(call _ota_rollout,figure-eight-v1)
+	@echo "watch the rover at http://localhost:14680 — should start tracing a figure 8"
+
+.PHONY: ota-status
+ota-status: ## List recent OTA rollouts (requires controlplane-up)
+	@curl -sS $(OTA_CP_HOST)/v1/ota/rollouts | (command -v jq >/dev/null && jq || cat)
+
 .PHONY: build-agent
 build-agent:
 	cd agent && go build -o ../bin/agent ./cmd/agent
