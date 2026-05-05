@@ -54,8 +54,16 @@ else ifeq ($(CONTAINER_ENGINE),podman)
   else
     COMPOSE := podman compose
   endif
-  # Rootless podman: $XDG_RUNTIME_DIR/podman/podman.sock. Rootful: /run/podman/podman.sock.
-  CONTAINER_SOCK := $(if $(XDG_RUNTIME_DIR),$(XDG_RUNTIME_DIR)/podman/podman.sock,/run/podman/podman.sock)
+  # Ask podman directly. On macOS the host doesn't have /run/podman/
+  # at all — the socket lives inside the podman machine VM at the
+  # path podman reports. Strip a unix:// prefix if present.
+  # Falls back to the canonical rootless path if podman info fails.
+  _PODMAN_SOCK := $(shell podman info --format '{{.Host.RemoteSocket.Path}}' 2>/dev/null)
+  ifneq (,$(_PODMAN_SOCK))
+    CONTAINER_SOCK := $(patsubst unix://%,%,$(_PODMAN_SOCK))
+  else
+    CONTAINER_SOCK := $(if $(XDG_RUNTIME_DIR),$(XDG_RUNTIME_DIR)/podman/podman.sock,/run/podman/podman.sock)
+  endif
 else
   COMPOSE := /bin/false
   CONTAINER_SOCK :=
