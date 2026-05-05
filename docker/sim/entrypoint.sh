@@ -8,8 +8,6 @@ set +u
 source /opt/ros/humble/setup.bash
 set -u
 
-TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-burger}"
-WORLD="${WORLD:-empty_world.launch.py}"
 BRIDGE_SOCKET="${BRIDGE_SOCKET:-/run/bridge/temporal-hack-bridge.sock}"
 HEADLESS="${HEADLESS:-0}"   # default 0: show the GUI via noVNC.
                              # Set HEADLESS=1 to skip the X stack entirely.
@@ -28,8 +26,8 @@ shutdown() {
 trap shutdown SIGINT SIGTERM
 
 if [ "$HEADLESS" = "1" ]; then
-    echo "[sim] HEADLESS=1; running gzserver only (no display)"
-    ros2 launch turtlebot3_gazebo "$WORLD" gui:=false &
+    echo "[sim] HEADLESS=1; running ign gazebo server only (no display)"
+    ign gazebo -s -v 4 empty.sdf &
     PIDS+=($!)
 else
     # Start a virtual X display, a minimal window manager, a VNC
@@ -55,8 +53,12 @@ else
     websockify --web=/usr/share/novnc 6080 localhost:5900 &
     PIDS+=($!)
 
-    echo "[sim] launching Gazebo with GUI (DISPLAY=$DISPLAY)"
-    ros2 launch turtlebot3_gazebo "$WORLD" gui:=true &
+    echo "[sim] launching Ignition Fortress with GUI (DISPLAY=$DISPLAY)"
+    # Software OpenGL is the only path that works in Xvfb (no GPU).
+    # OGRE2 will use Mesa's llvmpipe and render to the virtual fb.
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export OGRE2_RTSHADERSYSTEM_WRITE_SHADERS_TO_DISK=0
+    ign gazebo -v 4 empty.sdf &
     PIDS+=($!)
 
     echo
