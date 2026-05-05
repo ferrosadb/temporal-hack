@@ -20,8 +20,15 @@ services:
     environment:
       TURTLEBOT3_MODEL: burger
       ROS_DOMAIN_ID: 42
-      HEADLESS: "1"
+      # HEADLESS=0 means the GUI is served over noVNC. To run gzserver
+      # only (no GUI, no X stack), set HEADLESS=1 in the env.
+      HEADLESS: "${SIM_HEADLESS:-0}"
       BRIDGE_SOCKET: /run/bridge/temporal-hack-bridge.sock
+    ports:
+      # Browser GUI (noVNC):  http://localhost:14680/vnc.html?autoconnect=1
+      - "${SIM_NOVNC_PORT:-14680}:6080"
+      # Raw VNC (TigerVNC, macOS Screen Sharing, etc.) at localhost:14900
+      - "${SIM_VNC_PORT:-14900}:5900"
     volumes:
       - bridge-sock:/run/bridge
 

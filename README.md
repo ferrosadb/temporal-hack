@@ -69,10 +69,17 @@ its own container, consumes the bridge's gRPC stream, and reports to
 the lab MQTT broker.
 
 ```bash
-make sim-up      # builds + starts lab + sim + agent
-make sim-logs    # tail sim and agent
+make sim-up           # lab + Gazebo (GUI on :14680) + agent
+make sim-gui          # open the Gazebo GUI in your browser
+make sim-up-headless  # gzserver only — no GUI
+make sim-logs
 make sim-down
 ```
+
+The Gazebo GUI is served via noVNC; just hit
+`http://localhost:14680/vnc.html?autoconnect=1` in any browser. No
+X11, no XQuartz, no platform-specific setup. Raw VNC clients can use
+`localhost:14900`.
 
 The image is large (~3-4 GB) because Gazebo + ROS 2 desktop pulls in
 a lot. First build takes 10–20 min on a clean cache.

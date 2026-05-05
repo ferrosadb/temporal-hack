@@ -327,12 +327,19 @@ curl -s http://localhost:8081/v1/robots | jq
 ## Section 8 — Sim container (optional, requires ~5 GB disk)
 
 ```bash
-make sim-up           # builds Gazebo + ROS 2 + bridge + agent containers
+make sim-up           # builds Gazebo + ROS 2 + bridge + agent
+make sim-gui          # opens the Gazebo GUI in your browser
+make sim-up-headless  # no GUI; gzserver only
 make sim-logs         # tail sim and agent
 make sim-down
 ```
 
 First build is 10–20 minutes; subsequent builds are minutes.
+
+The Gazebo GUI is exposed over noVNC, so it works in any browser
+(Safari, Chrome, Firefox) without X11 setup:
+- `http://localhost:14680/vnc.html?autoconnect=1` — browser GUI
+- `localhost:14900` — raw VNC for native clients
 
 ---
 
