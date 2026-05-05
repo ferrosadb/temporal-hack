@@ -42,7 +42,7 @@ operations prefer it.
 
 ## Consequences
 
-- Installer ships `registry:2` on port 5000 in lab; production target
+- Installer ships `registry:2` on host port 5001 in lab (maps to container port 5000); production target
   exposes it on a routable address with TLS termination at the
   ingress.
 - Image signatures (ADR-007 / `todo/ota-image-signing.md`) verified

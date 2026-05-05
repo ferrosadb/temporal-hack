@@ -35,7 +35,11 @@ jobs:
         timeout-minutes: 6
       - name: probe CI ports
         run: |
+<<<<<<< HEAD
           for port in 25432 27233 21883 25050; do
+=======
+          for port in 5432 7233 1883 5001; do
+>>>>>>> a2155cf (working cloud components)
             for i in $(seq 1 30); do
               nc -z localhost "$port" && break
               sleep 2

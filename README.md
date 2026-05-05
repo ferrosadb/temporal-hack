@@ -13,6 +13,7 @@ cloud/        Go control plane (API + telemetry-ingest)
 agent/        Go robot agent (MQTT publisher + local SQLite buffer)
 bridge/       Python ROS 2 bridge node (DDS → gRPC for the agent)
 proto/        protobuf contracts (telemetry + agent↔bridge)
+docker/       Dockerfiles (sim image, dummy-robot lab OTA placeholder)
 installer/    docker-compose (lab) and helm (prod stub)
 deploy/       service config baked into the installer
 specs/        blueprint artifacts (decisions, threats, plan, ADRs)
@@ -89,9 +90,10 @@ a lot. First build takes 10–20 min on a clean cache.
 With the lab + sim up:
 
 ```bash
-# Push an image to the lab registry (default port 14050)
-docker tag busybox:latest localhost:14050/robot-app:v1
-docker push localhost:14050/robot-app:v1
+# Build and push the lab dummy robot image (Alpine + sleep infinity)
+docker build -t localhost:5001/robot-app:v1 -f docker/dummy-robot/Dockerfile docker/dummy-robot
+docker push localhost:5001/robot-app:v1
+# Or: make dummy-robot-image   (same; requires lab registry + insecure-registries for HTTP)
 
 # Run the OTA worker (separate terminal)
 TEMPORAL_ADDR=localhost:14733 BROKER_URL=tcp://localhost:14883 \
@@ -107,7 +109,7 @@ TEMPORAL_ADDR=localhost:14733 \
 curl -X POST http://localhost:8081/v1/ota/rollouts \
   -H "content-type: application/json" \
   -d '{
-    "image_ref": "localhost:14050/robot-app:v1",
+    "image_ref": "localhost:5001/robot-app:v1",
     "smoke_command": "true",
     "cohort_selector": {"robot_ids": ["sim-robot-01"]}
   }'

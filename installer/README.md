@@ -75,6 +75,14 @@ The two clusters run under separate Compose project names
 (`temporal-hack-lab` and `temporal-hack-ci`) so they can be brought up
 **simultaneously**. `make ci-up` is what the GitHub Actions
 `installer-smoke` job and the local `pre-push` hook both run.
+| Service           | Port  |
+|-------------------|-------|
+| Postgres          | 5432  |
+| Temporal frontend | 7233  |
+| Temporal UI       | 8080  |
+| MQTT              | 1883  |
+| MQTT dashboard    | 18083 |
+| Registry          | 5001  |
 
 ## Production-target gaps (tracked, not v1)
 

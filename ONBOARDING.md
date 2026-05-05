@@ -348,15 +348,15 @@ The Gazebo GUI is exposed over noVNC, so it works in any browser
 With the lab stack and worker up:
 
 ```bash
-# Push a trivial image to the lab registry
-docker tag busybox:latest localhost:5000/robot-app:v1
-docker push localhost:5000/robot-app:v1
+# Build and push the lab dummy robot image (Alpine; stays running for swap checks)
+docker build -t localhost:5001/robot-app:v1 -f docker/dummy-robot/Dockerfile docker/dummy-robot
+docker push localhost:5001/robot-app:v1
 
 # Start a rollout
 curl -X POST http://localhost:8081/v1/ota/rollouts \
   -H "content-type: application/json" \
   -d '{
-    "image_ref": "localhost:5000/robot-app:v1",
+    "image_ref": "localhost:5001/robot-app:v1",
     "smoke_command": "true",
     "cohort_selector": {"robot_ids": ["lab-robot-01"]}
   }'

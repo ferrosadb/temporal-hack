@@ -25,7 +25,7 @@ import "google/protobuf/timestamp.proto";
 message OTACommand {
   string rollout_id = 1;
   string robot_id = 2;
-  string image_ref = 3;        // e.g. "registry.local:5000/robot-app:1.4.2"
+  string image_ref = 3;        // e.g. "registry.local:5001/robot-app:1.4.2"
   string image_digest = 4;     // expected digest after pull (sha256:...)
   uint32 smoke_timeout_sec = 5;
   string smoke_command = 6;    // executed inside the new container
