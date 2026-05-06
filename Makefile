@@ -422,6 +422,30 @@ sim-drive-stop: ## Stop the rover
 	@$(CONTAINER_ENGINE) exec $(SIM_CONTAINER) bash -c \
 	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "linear: {x: 0}, angular: {z: 0}"'
 
+# Teleport the rover back to the origin. Useful when an OTA controller
+# runs the rover off the world or into the boulder. Override
+# TELEPORT_X / TELEPORT_Y / TELEPORT_Z to land somewhere else.
+SIM_GAZEBO_CONTAINER ?= temporal-hack-lab-gazebo-1
+SIM_WORLD_NAME ?= moon
+ROBOT_MODEL ?= perseverance
+TELEPORT_X ?= 0
+TELEPORT_Y ?= 0
+TELEPORT_Z ?= 0.30
+
+.PHONY: sim-teleport
+sim-teleport: ## Teleport the rover back to the origin (override TELEPORT_X/Y/Z)
+	@echo "[sim-teleport] $(ROBOT_MODEL) -> ($(TELEPORT_X), $(TELEPORT_Y), $(TELEPORT_Z))"
+	@# Stop the rover first so its old velocity doesn't get carried over.
+	@$(CONTAINER_ENGINE) exec $(SIM_GAZEBO_CONTAINER) bash -c \
+	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "linear: {x: 0}, angular: {z: 0}"' >/dev/null 2>&1 || true
+	@# set_pose service from inside the gazebo container. Orientation
+	@# is identity quaternion (w=1) — rover faces +x.
+	@$(CONTAINER_ENGINE) exec $(SIM_GAZEBO_CONTAINER) bash -c \
+	  'ign service -s /world/$(SIM_WORLD_NAME)/set_pose \
+	     --reqtype ignition.msgs.Pose --reptype ignition.msgs.Boolean \
+	     --timeout 2000 \
+	     --req "name: \"$(ROBOT_MODEL)\", position: {x: $(TELEPORT_X), y: $(TELEPORT_Y), z: $(TELEPORT_Z)}, orientation: {w: 1.0}"'
+
 # =============================================================================
 # CI cluster (smoke / pre-push parity) — alternate ports so it can run
 # alongside `make lab-up` on the same host. Used by .git-hooks/installer-smoke.sh
