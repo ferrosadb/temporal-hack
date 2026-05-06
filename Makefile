@@ -422,6 +422,30 @@ sim-drive-stop: ## Stop the rover
 	@$(CONTAINER_ENGINE) exec $(SIM_CONTAINER) bash -c \
 	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "linear: {x: 0}, angular: {z: 0}"'
 
+# Teleport the rover back to the origin. Useful when an OTA controller
+# runs the rover off the world or into the boulder. Override
+# TELEPORT_X / TELEPORT_Y / TELEPORT_Z to land somewhere else.
+SIM_GAZEBO_CONTAINER ?= temporal-hack-lab-gazebo-1
+SIM_WORLD_NAME ?= moon
+ROBOT_MODEL ?= perseverance
+TELEPORT_X ?= 0
+TELEPORT_Y ?= 0
+TELEPORT_Z ?= 0.30
+
+.PHONY: sim-teleport
+sim-teleport: ## Teleport the rover back to the origin (override TELEPORT_X/Y/Z)
+	@echo "[sim-teleport] $(ROBOT_MODEL) -> ($(TELEPORT_X), $(TELEPORT_Y), $(TELEPORT_Z))"
+	@# Stop the rover first so its old velocity doesn't get carried over.
+	@$(CONTAINER_ENGINE) exec $(SIM_GAZEBO_CONTAINER) bash -c \
+	  'ign topic -t $(GZ_DRIVE_TOPIC) -m ignition.msgs.Twist -p "linear: {x: 0}, angular: {z: 0}"' >/dev/null 2>&1 || true
+	@# set_pose service from inside the gazebo container. Orientation
+	@# is identity quaternion (w=1) — rover faces +x.
+	@$(CONTAINER_ENGINE) exec $(SIM_GAZEBO_CONTAINER) bash -c \
+	  'ign service -s /world/$(SIM_WORLD_NAME)/set_pose \
+	     --reqtype ignition.msgs.Pose --reptype ignition.msgs.Boolean \
+	     --timeout 2000 \
+	     --req "name: \"$(ROBOT_MODEL)\", position: {x: $(TELEPORT_X), y: $(TELEPORT_Y), z: $(TELEPORT_Z)}, orientation: {w: 1.0}"'
+
 # =============================================================================
 # CI cluster (smoke / pre-push parity) — alternate ports so it can run
 # alongside `make lab-up` on the same host. Used by .git-hooks/installer-smoke.sh
@@ -436,6 +460,44 @@ sim-drive-stop: ## Stop the rover
 
 CI_PROJECT := temporal-hack-ci
 CI_FILES   := -f docker-compose.yml -f docker-compose.ci.yml
+
+# =============================================================================
+# Demo reset — wipes all transient demo state and (optionally) brings
+# the stack back up clean.
+#
+#   make demo-reset           stops everything, wipes volumes + .run/,
+#                             and BRINGS THE STACK BACK UP fresh
+#   make demo-reset NOUP=1    same, but stops short of starting again
+# =============================================================================
+
+.PHONY: demo-reset
+demo-reset: container-check ## Stop everything, wipe demo state, and start fresh (NOUP=1 to skip the bring-up)
+	@echo "[demo-reset] stopping host-side processes"
+	-@$(MAKE) -s controlplane-down
+	-@$(MAKE) -s workers-down
+	-@$(MAKE) -s agent-down
+	@echo "[demo-reset] killing OTA-spawned robot-app containers"
+	-@$(CONTAINER_ENGINE) rm -f robot-app robot-app-new >/dev/null 2>&1 || true
+	@echo "[demo-reset] tearing down sim + lab compose, wiping volumes"
+	-@cd installer/docker-compose && $(COMPOSE) -p $(LAB_PROJECT) \
+	  -f docker-compose.yml -f docker-compose.sim.yml down -v >/dev/null 2>&1 || true
+	@echo "[demo-reset] clearing .run/ pid files and logs"
+	@rm -rf .run/
+	@if [ "$${NOUP:-0}" = "1" ]; then \
+	  echo "[demo-reset] NOUP=1 — stopping after teardown"; \
+	  exit 0; \
+	fi
+	@echo "[demo-reset] bringing the stack back up"
+	@$(MAKE) -s sim-up
+	@$(MAKE) -s agent-up
+	@$(MAKE) -s workers-up
+	@$(MAKE) -s controlplane-up
+	@echo
+	@echo "  demo reset complete. Re-run a demo:"
+	@echo "    make ota-circle"
+	@echo "    make collide"
+	@echo "  GUI: http://localhost:14680/vnc.html?autoconnect=1&resize=scale"
+	@echo "  Temporal UI: http://localhost:14080"
 
 .PHONY: ci-up
 ci-up: container-check ## Bring up an isolated CI/smoke cluster on alternate ports
