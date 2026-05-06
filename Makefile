@@ -447,6 +447,45 @@ sim-teleport: ## Teleport the rover back to the origin (override TELEPORT_X/Y/Z)
 	     --req "name: \"$(ROBOT_MODEL)\", position: {x: $(TELEPORT_X), y: $(TELEPORT_Y), z: $(TELEPORT_Z)}, orientation: {w: 1.0}"'
 
 # =============================================================================
+# Web console (operator UI) — Vite + React. Dev server proxies /v1 to
+# the controlplane (default localhost:8081). Override CONTROLPLANE_URL=
+# to point at a different backend.
+# =============================================================================
+
+WEB_DIR ?= web
+WEB_PID := .run/web.pid
+
+.PHONY: web-install
+web-install: ## Install web console deps
+	cd $(WEB_DIR) && npm install
+
+.PHONY: web-up
+web-up: ## Start the web console dev server (http://127.0.0.1:5173)
+	@mkdir -p .run
+	@if [ -f $(WEB_PID) ] && kill -0 $$(cat $(WEB_PID)) 2>/dev/null; then \
+	  echo "[web] already running (pid $$(cat $(WEB_PID)))"; exit 0; fi
+	@if [ ! -d $(WEB_DIR)/node_modules ]; then $(MAKE) web-install; fi
+	cd $(WEB_DIR) && nohup npm run dev >../.run/web.log 2>&1 & echo $$! >$(WEB_PID)
+	@echo "[web] started → http://127.0.0.1:5173/  (logs: .run/web.log)"
+
+.PHONY: web-down
+web-down: ## Stop the web console dev server
+	@if [ -f $(WEB_PID) ]; then \
+	  kill $$(cat $(WEB_PID)) 2>/dev/null || true; rm -f $(WEB_PID); \
+	  echo "[web] stopped"; \
+	else echo "[web] not running"; fi
+
+.PHONY: web-status
+web-status: ## Show whether the web dev server is up
+	@if [ -f $(WEB_PID) ] && kill -0 $$(cat $(WEB_PID)) 2>/dev/null; then \
+	  echo "[web] running (pid $$(cat $(WEB_PID)))"; \
+	else echo "[web] not running"; fi
+
+.PHONY: web-build
+web-build: ## Production-build the web console (web/dist/)
+	cd $(WEB_DIR) && npm run build
+
+# =============================================================================
 # CI cluster (smoke / pre-push parity) — alternate ports so it can run
 # alongside `make lab-up` on the same host. Used by .git-hooks/installer-smoke.sh
 # and by .github/workflows/ci.yml.

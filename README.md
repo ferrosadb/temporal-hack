@@ -302,6 +302,15 @@ Watch the `collision-…` workflow at `http://localhost:14080`.
 |--------|------|
 | `sim-drive-fwd LX=` | direct gz `cmd_vel` publish |
 | `sim-drive-back` / `sim-drive-left` / `sim-drive-right` / `sim-drive-stop` | same |
+| `sim-teleport` | reset the rover to the origin (override `TELEPORT_X/Y/Z=`) |
+
+### Web console
+
+| target | what |
+|--------|------|
+| `web-up` / `web-down` / `web-status` | Vite dev server on `:5173`, proxies `/v1` to controlplane |
+| `web-build` | production build to `web/dist/` |
+| `web-install` | one-time `npm install` |
 
 ### Demos
 
