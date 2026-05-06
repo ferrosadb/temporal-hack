@@ -6,6 +6,8 @@
 export type RobotRow = {
   robot_id: string;
   last_seen: string;
+  buffered_samples?: number;
+  status?: string;
 };
 
 export type RolloutSpec = {

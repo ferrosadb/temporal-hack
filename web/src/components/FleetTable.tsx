@@ -77,8 +77,10 @@ export function FleetTable({
               </tr>
             ) : (
               robots.map((r) => {
-                const st = status(r.last_seen);
+                const st = (r.status || status(r.last_seen)) as "online" | "stale";
                 const isSelected = selected.has(r.robot_id);
+                const buffered =
+                  r.buffered_samples && r.buffered_samples > 0 ? r.buffered_samples.toLocaleString() : "—";
                 return (
                   <tr
                     key={r.robot_id}
@@ -101,7 +103,7 @@ export function FleetTable({
                     <td className="px-5 py-3 text-muted-foreground">
                       {relativeTime(r.last_seen)}
                     </td>
-                    <td className="px-5 py-3 text-muted-foreground">—</td>
+                    <td className="px-5 py-3 text-muted-foreground">{buffered}</td>
                     <td className="px-5 py-3">
                       <StatusPill status={st} />
                     </td>

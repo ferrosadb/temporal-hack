@@ -154,26 +154,29 @@ agent-status: ## Show native agent status
 	 else echo "agent: not running"; fi
 
 .PHONY: workers-up
-workers-up: build-cloud ## Start ota-worker + collision-worker in the background
+workers-up: build-cloud ## Start telemetry-ingest + ota-worker + collision-worker in the background
 	@mkdir -p .run
+	@BROKER_URL=$(WORKER_BROKER_URL) TSDB_DSN="$(WORKER_TSDB_DSN)" \
+	  nohup ./bin/telemetry-ingest > .run/telemetry-ingest.log 2>&1 & echo $$! > .run/telemetry-ingest.pid
 	@TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) BROKER_URL=$(WORKER_BROKER_URL) \
 	  TSDB_DSN="$(WORKER_TSDB_DSN)" \
 	  nohup ./bin/ota-worker > .run/ota-worker.log 2>&1 & echo $$! > .run/ota-worker.pid
 	@TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) BROKER_URL=$(WORKER_BROKER_URL) \
 	  nohup ./bin/collision-worker > .run/collision-worker.log 2>&1 & echo $$! > .run/collision-worker.pid
 	@sleep 1
+	@echo "telemetry-ingest  PID $$(cat .run/telemetry-ingest.pid 2>/dev/null)  log .run/telemetry-ingest.log"
 	@echo "ota-worker        PID $$(cat .run/ota-worker.pid 2>/dev/null)        log .run/ota-worker.log"
 	@echo "collision-worker  PID $$(cat .run/collision-worker.pid 2>/dev/null)  log .run/collision-worker.log"
 
 .PHONY: workers-down
 workers-down: ## Stop the workflow workers
-	@for f in .run/ota-worker.pid .run/collision-worker.pid; do \
+	@for f in .run/telemetry-ingest.pid .run/ota-worker.pid .run/collision-worker.pid; do \
 	  [ -f $$f ] && kill "$$(cat $$f)" 2>/dev/null && rm -f $$f && echo "stopped $$f" || true; \
 	done
 
 .PHONY: workers-status
 workers-status: ## Show status of running workflow workers
-	@for n in ota-worker collision-worker; do \
+	@for n in telemetry-ingest ota-worker collision-worker; do \
 	  pid="$$(cat .run/$$n.pid 2>/dev/null || echo '')"; \
 	  if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then \
 	    echo "$$n: running (pid $$pid)"; \
