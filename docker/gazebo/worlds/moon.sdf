@@ -126,11 +126,41 @@
       </link>
     </model>
 
-    <!-- Perseverance rover (model lives at /opt/sim/models/perseverance) -->
+    <!-- Perseverance rovers (model lives at /opt/sim/models/perseverance).
+         Six instances scattered around the spawn so the operator
+         console has a visible fleet. The DiffDrive plugin inside the
+         model subscribes to /model/perseverance/cmd_vel for all of
+         them, so a single Twist drives the whole formation in
+         lockstep — visually convenient for the OTA demo. -->
     <include>
       <uri>model://perseverance</uri>
       <name>perseverance</name>
       <pose>0 0 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://perseverance</uri>
+      <name>perseverance-02</name>
+      <pose>2.5 2.5 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://perseverance</uri>
+      <name>perseverance-03</name>
+      <pose>-2.5 2.5 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://perseverance</uri>
+      <name>perseverance-04</name>
+      <pose>2.5 -2.5 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://perseverance</uri>
+      <name>perseverance-05</name>
+      <pose>-2.5 -2.5 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://perseverance</uri>
+      <name>perseverance-06</name>
+      <pose>0 4.5 0 0 0 0</pose>
     </include>
   </world>
 </sdf>
