@@ -20,6 +20,12 @@ export type StartRolloutResponse = {
   rollout_id: string;
 };
 
+export type ImageRef = {
+  repo: string;
+  tag: string;
+  image_ref: string;
+};
+
 const baseUrl = (() => {
   const fromStorage =
     typeof window !== "undefined"
@@ -46,6 +52,8 @@ export const api = {
   baseUrl: () => baseUrl || window.location.origin,
 
   listRobots: () => req<RobotRow[]>("/v1/robots"),
+
+  listImages: () => req<ImageRef[]>("/v1/ota/images"),
 
   startRollout: (spec: RolloutSpec) =>
     req<StartRolloutResponse>("/v1/ota/rollouts", {

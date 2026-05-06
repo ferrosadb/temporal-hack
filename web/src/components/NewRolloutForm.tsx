@@ -1,6 +1,6 @@
-import { Rocket, X } from "lucide-react";
-import { useState } from "react";
-import { api } from "@/lib/api";
+import { ChevronDown, Rocket, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api, type ImageRef } from "@/lib/api";
 
 type Props = {
   cohort: string[];
@@ -9,10 +9,34 @@ type Props = {
 };
 
 export function NewRolloutForm({ cohort, onClear, onSuccess }: Props) {
+  const [images, setImages] = useState<ImageRef[]>([]);
+  const [imagesError, setImagesError] = useState<string | null>(null);
   const [imageRef, setImageRef] = useState("");
   const [smoke, setSmoke] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    api
+      .listImages()
+      .then((rows) => {
+        if (cancel) return;
+        const sorted = (rows ?? []).slice().sort((a, b) =>
+          a.repo === b.repo ? a.tag.localeCompare(b.tag) : a.repo.localeCompare(b.repo),
+        );
+        setImages(sorted);
+        if (sorted.length > 0 && imageRef === "") setImageRef(sorted[0].image_ref);
+      })
+      .catch((err: unknown) => {
+        if (!cancel) setImagesError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancel = true;
+    };
+    // images load once on mount; intentionally empty deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const disabled = submitting || cohort.length === 0 || imageRef.trim() === "";
 
@@ -27,7 +51,6 @@ export function NewRolloutForm({ cohort, onClear, onSuccess }: Props) {
         cohort_selector: { robot_ids: cohort },
       });
       onSuccess(res.rollout_id);
-      setImageRef("");
       setSmoke("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -47,13 +70,30 @@ export function NewRolloutForm({ cohort, onClear, onSuccess }: Props) {
 
       <form onSubmit={submit} className="px-5 py-4 space-y-4">
         <Field label="Image ref">
-          <input
-            type="text"
-            value={imageRef}
-            onChange={(e) => setImageRef(e.target.value)}
-            placeholder="registry/robot-app:v2"
-            className="w-full rounded-md bg-input border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/60"
-          />
+          {imagesError ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {imagesError}
+            </div>
+          ) : images.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+              Loading available images…
+            </div>
+          ) : (
+            <div className="relative">
+              <select
+                value={imageRef}
+                onChange={(e) => setImageRef(e.target.value)}
+                className="w-full appearance-none rounded-md bg-input border border-border px-3 py-2 pr-9 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/60"
+              >
+                {images.map((img) => (
+                  <option key={img.image_ref} value={img.image_ref}>
+                    {img.repo}:{img.tag}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </div>
+          )}
         </Field>
 
         <Field label="Smoke command">

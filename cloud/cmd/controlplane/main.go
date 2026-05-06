@@ -22,6 +22,7 @@ func main() {
 	addr := envOr("LISTEN_ADDR", ":8081")
 	tsdbDSN := envOr("TSDB_DSN", "postgres://temporal:temporal@localhost:5432/telemetry?sslmode=disable")
 	temporalAddr := envOr("TEMPORAL_ADDR", "localhost:7233")
+	registryURL := envOr("REGISTRY_URL", "http://localhost:14050")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -39,7 +40,7 @@ func main() {
 		logger.Warn("temporal client unavailable; OTA routes disabled", "err", terr)
 	} else {
 		defer tcli.Close()
-		otaDeps = &api.OTADeps{Temporal: tcli}
+		otaDeps = &api.OTADeps{Temporal: tcli, RegistryURL: registryURL}
 	}
 
 	srv := &http.Server{

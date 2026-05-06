@@ -153,6 +153,53 @@ agent-status: ## Show native agent status
 	 if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then echo "agent: running (pid $$pid)"; \
 	 else echo "agent: not running"; fi
 
+# Extra fleet — N additional native agents that publish heartbeats so
+# the operator console has a fleet to look at. They share the lab
+# broker but write to their own SQLite buffers and use bogus bridge
+# addrs (no ROS connection, no telemetry — heartbeats only). IDs are
+# sim-robot-02..sim-robot-(01+N).
+SIM_ROBOTS_N ?= 5
+
+.PHONY: sim-robots-up
+sim-robots-up: build-agent ## Start $(SIM_ROBOTS_N) extra native agents (sim-robot-02..)
+	@mkdir -p .run
+	@for i in $$(seq 2 $$(( 1 + $(SIM_ROBOTS_N) ))); do \
+	  rid=$$(printf "sim-robot-%02d" $$i); \
+	  pidfile=.run/agent-$$rid.pid; \
+	  if [ -f $$pidfile ] && kill -0 $$(cat $$pidfile) 2>/dev/null; then \
+	    echo "$$rid already running (pid $$(cat $$pidfile))"; continue; \
+	  fi; \
+	  ROBOT_ID=$$rid \
+	    BROKER_URL=$(AGENT_BROKER_URL) \
+	    BRIDGE_ADDR=localhost:1 \
+	    BUFFER_PATH=.run/agent-$$rid-buffer.db \
+	    nohup ./bin/agent > .run/agent-$$rid.log 2>&1 & \
+	  echo $$! > $$pidfile; \
+	  echo "$$rid             PID $$(cat $$pidfile)             log .run/agent-$$rid.log"; \
+	done
+
+.PHONY: sim-robots-down
+sim-robots-down: ## Stop all extra fleet agents
+	@for f in .run/agent-sim-robot-*.pid; do \
+	  [ -f $$f ] || continue; \
+	  rid=$$(basename $$f .pid | sed 's/^agent-//'); \
+	  pid=$$(cat $$f); \
+	  kill $$pid 2>/dev/null && echo "stopped $$rid (pid $$pid)" || true; \
+	  rm -f $$f; \
+	done
+
+.PHONY: sim-robots-status
+sim-robots-status: ## Show extra fleet agent status
+	@found=0; for f in .run/agent-sim-robot-*.pid; do \
+	  [ -f $$f ] || continue; \
+	  found=1; \
+	  rid=$$(basename $$f .pid | sed 's/^agent-//'); \
+	  pid=$$(cat $$f); \
+	  if kill -0 $$pid 2>/dev/null; then echo "$$rid: running (pid $$pid)"; \
+	  else echo "$$rid: not running (stale pidfile)"; fi; \
+	done; \
+	[ $$found = 0 ] && echo "no extra fleet agents running" || true
+
 .PHONY: workers-up
 workers-up: build-cloud ## Start telemetry-ingest + ota-worker + collision-worker in the background
 	@mkdir -p .run
@@ -199,7 +246,8 @@ collide: ## Publish a fake collision event for sim-robot-01 (triggers Temporal w
 # pattern as workers-up / workers-down.
 # =============================================================================
 
-CP_LISTEN_ADDR ?= :8081
+CP_LISTEN_ADDR  ?= :8081
+CP_REGISTRY_URL ?= http://localhost:14050
 
 .PHONY: controlplane-up
 controlplane-up: build-cloud ## Start the control plane HTTP API in the background
@@ -207,6 +255,7 @@ controlplane-up: build-cloud ## Start the control plane HTTP API in the backgrou
 	@LISTEN_ADDR=$(CP_LISTEN_ADDR) \
 	  TEMPORAL_ADDR=$(WORKER_TEMPORAL_ADDR) \
 	  TSDB_DSN="$(WORKER_TSDB_DSN)" \
+	  REGISTRY_URL=$(CP_REGISTRY_URL) \
 	  nohup ./bin/controlplane > .run/controlplane.log 2>&1 & echo $$! > .run/controlplane.pid
 	@sleep 1
 	@echo "controlplane      PID $$(cat .run/controlplane.pid 2>/dev/null)      log .run/controlplane.log"
