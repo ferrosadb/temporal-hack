@@ -26,6 +26,12 @@ from ros_gz_interfaces.msg import Contacts
 
 DEBOUNCE_SEC = 2.0
 
+# Collision partners we IGNORE — these are continuous "of course
+# you're touching the ground" contacts that shouldn't trigger an
+# avoidance workflow. Substring match on the contact's collision2
+# name (e.g. "lunar_ground::link::collision").
+IGNORE_PARTNERS = ("lunar_ground", "ground_plane")
+
 
 class CollisionPublisher(Node):
     def __init__(self) -> None:
@@ -53,12 +59,23 @@ class CollisionPublisher(Node):
         # means "no contacts this step"; only act on non-empty.
         if not msg.contacts:
             return
+        # Pick a contact whose partner is *not* the ground — the rover
+        # stands on its wheels (or rests on its deck) so the ground is
+        # always touching something. We only care about novel obstacles.
+        partner = None
+        for c in msg.contacts:
+            name = c.collision2.name or ""
+            if any(ig in name for ig in IGNORE_PARTNERS):
+                continue
+            partner = name
+            break
+        if partner is None:
+            return
         now = time.monotonic()
         if now - self._last_emit < DEBOUNCE_SEC:
             return
         self._last_emit = now
         self._counter += 1
-        partner = msg.contacts[0].collision2.name if msg.contacts else "unknown"
         body = json.dumps({
             "robot_id": self.robot_id,
             "at": time.time(),

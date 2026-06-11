@@ -34,11 +34,11 @@ func (a *Activities) SendTwist(ctx context.Context, args SendTwistArgs) error {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		// paho handles its own reconnects; don't second-guess via
-		// IsConnectionOpen(), which has tight semantics around
-		// reconnect windows. The token's WaitTimeout + Error are
-		// the authoritative result for a single publish.
-		tok := a.MQTT.Publish(topic, 1, false, body)
+		// QoS 0: twist messages are republished at 10 Hz so a dropped
+		// frame doesn't matter, and the QoS-1 PUBACK round-trip
+		// causes inflight-queue saturation against EMQX. Fire-and-
+		// forget is the right choice for high-rate control commands.
+		tok := a.MQTT.Publish(topic, 0, false, body)
 		if !tok.WaitTimeout(2 * time.Second) {
 			return fmt.Errorf("mqtt publish timeout for %s", topic)
 		}
@@ -55,7 +55,8 @@ func (a *Activities) SendTwist(ctx context.Context, args SendTwistArgs) error {
 		}
 	}
 
-	// Final explicit stop frame.
+	// Final explicit stop frame (QoS 1 here so the rover always sees the
+	// stop even if the last QoS 0 packet got dropped).
 	tok := a.MQTT.Publish(topic, 1, false, stop)
 	tok.WaitTimeout(2 * time.Second)
 	return tok.Error()

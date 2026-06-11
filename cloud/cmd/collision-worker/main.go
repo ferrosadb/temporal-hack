@@ -71,7 +71,12 @@ func connectMQTT(url string) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(url).
 		SetClientID("collision-worker").
-		SetCleanSession(false).
+		// CleanSession=true on purpose: a missed collision event is
+		// fine (the next contact will fire another). With clean=false
+		// EMQX queues every event the bridge missed; after a storm or
+		// restart the worker reconnects to a flood of replays that
+		// blocks the publisher with backpressure.
+		SetCleanSession(true).
 		SetAutoReconnect(true).
 		SetMaxReconnectInterval(60 * time.Second).
 		SetOrderMatters(false)
